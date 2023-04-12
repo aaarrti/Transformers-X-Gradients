@@ -13,7 +13,6 @@ from transformers_gradients.config import (
 )
 from transformers_gradients.types import Explanation
 
-def gradient_norm(model, x_batch, y_batch, *args, **kwargs): ...
 @overload
 def gradient_norm(
     model: TFPreTrainedModel,
@@ -25,12 +24,6 @@ def gradient_norm(
 def gradient_norm(
     model: TFPreTrainedModel, x_batch: tf.Tensor, y_batch: tf.Tensor, **kwargs
 ) -> tf.Tensor: ...
-def gradient_x_input(
-    model,
-    x_batch,
-    y_batch,
-    tokenizer,
-): ...
 @overload
 def gradient_x_input(
     model: TFPreTrainedModel,
@@ -42,6 +35,7 @@ def gradient_x_input(
 def gradient_x_input(
     model: TFPreTrainedModel, x_batch: tf.Tensor, y_batch: tf.Tensor, **kwargs
 ) -> tf.Tensor: ...
+@overload
 def integrated_gradients(
     model: TFPreTrainedModel,
     x_batch: List[str],
@@ -57,6 +51,7 @@ def integrated_gradients(
     config: IntGradConfig | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
+@overload
 def smooth_grad(
     model: TFPreTrainedModel,
     x_batch: List[str],
@@ -72,6 +67,7 @@ def smooth_grad(
     config: SmoothGradConfing | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
+@overload
 def noise_grad(
     model: TFPreTrainedModel,
     x_batch: List[str],
@@ -87,6 +83,7 @@ def noise_grad(
     config: NoiseGradConfig | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
+@overload
 def noise_grad_plus_plus(
     model: TFPreTrainedModel,
     x_batch: List[str],
