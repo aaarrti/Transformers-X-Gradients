@@ -23,10 +23,7 @@ from transformers_gradients.config import (
 from transformers_gradients.util import is_xla_compatible_platform, get_input_ids
 
 
-@pytest.fixture(
-    scope="session",
-    # autouse=True
-)
+@pytest.fixture(scope="session", autouse=True)
 def profile():
     options = tf.profiler.experimental.ProfilerOptions(
         host_tracer_level=3, python_tracer_level=1, device_tracer_level=1

@@ -1,24 +1,26 @@
-from typing import overload, List, Optional
+from __future__ import annotations
+
+from typing import overload, List
 
 import tensorflow as tf
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
-from transformers_gradients.types import Explanation
 from transformers_gradients.config import (
     IntGradConfig,
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
     SmoothGradConfing,
 )
+from transformers_gradients.types import Explanation
 
 def gradient_norm(model, x_batch, y_batch, *args, **kwargs): ...
 @overload
 def gradient_norm(
     model: TFPreTrainedModel,
-    x_batch: list[str],
+    x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-) -> list[Explanation]: ...
+) -> List[Explanation]: ...
 @overload
 def gradient_norm(
     model: TFPreTrainedModel, x_batch: tf.Tensor, y_batch: tf.Tensor, **kwargs
@@ -32,7 +34,7 @@ def gradient_x_input(
 @overload
 def gradient_x_input(
     model: TFPreTrainedModel,
-    x_batch: list[str],
+    x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
 ) -> tf.Tensor: ...
@@ -45,14 +47,14 @@ def integrated_gradients(
     x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-    config: Optional[IntGradConfig] = None,
+    config: IntGradConfig | None = None,
 ) -> List[Explanation]: ...
 @overload
 def integrated_gradients(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    config: Optional[IntGradConfig] = None,
+    config: IntGradConfig | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
 def smooth_grad(
@@ -60,14 +62,14 @@ def smooth_grad(
     x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-    config: Optional[SmoothGradConfing] = None,
+    config: SmoothGradConfing | None = None,
 ) -> List[Explanation]: ...
 @overload
 def smooth_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    config: Optional[SmoothGradConfing] = None,
+    config: SmoothGradConfing | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
 def noise_grad(
@@ -75,14 +77,14 @@ def noise_grad(
     x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-    config: Optional[NoiseGradConfig] = None,
+    config: NoiseGradConfig | None = None,
 ) -> List[Explanation]: ...
 @overload
 def noise_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    config: Optional[NoiseGradConfig] = None,
+    config: NoiseGradConfig | None = None,
     **kwargs,
 ) -> tf.Tensor: ...
 def noise_grad_plus_plus(
@@ -90,13 +92,13 @@ def noise_grad_plus_plus(
     x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-    config: Optional[NoiseGradPlusPlusConfig] = None,
+    config: NoiseGradPlusPlusConfig | None = None,
 ) -> List[Explanation]: ...
 @overload
 def noise_grad_plus_plus(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    config: Optional[NoiseGradPlusPlusConfig] = None,
+    config: NoiseGradPlusPlusConfig | None = None,
     **kwargs,
 ) -> List[Explanation]: ...

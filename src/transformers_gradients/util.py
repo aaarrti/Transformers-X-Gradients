@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import platform
-from typing import TypeVar, Callable, Dict, NamedTuple
+from typing import TypeVar, Callable, Dict, NamedTuple, List, Tuple
 
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
@@ -11,8 +11,8 @@ R = TypeVar("R")
 
 
 def get_input_ids(
-    tokenizer: PreTrainedTokenizerBase, x_batch: list[str]
-) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
+    tokenizer: PreTrainedTokenizerBase, x_batch: List[str]
+) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
     """Do batch encode, unpack input ids and other forward-pass kwargs."""
     encoded_input = tokenizer(x_batch, padding="longest", return_tensors="tf").data
     return encoded_input.pop("input_ids"), encoded_input

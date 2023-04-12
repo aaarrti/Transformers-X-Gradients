@@ -32,7 +32,7 @@ def plain_text_hook(func):
     @wraps(func)
     def wrapper(
         model: TFPreTrainedModel,
-        x_batch: list[str] | tf.Tensor,
+        x_batch: List[str] | tf.Tensor,
         y_batch: tf.Tensor,
         tokenizer: PreTrainedTokenizerBase | None = None,
         **kwargs,
@@ -242,17 +242,17 @@ def integrated_gradients(
 
 
 @plain_text_hook
-# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def smooth_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: SmoothGradConfing | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
 
+    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
     def smooth_grad_fn(xx_batch, yy_batch, n, mean, std, **kwargs):
         explanations_array = tf.TensorArray(
             xx_batch.dtype,
@@ -289,11 +289,11 @@ def smooth_grad(
 @plain_text_hook
 def noise_grad(
     model: TFPreTrainedModel,
-    x_batch: list[str] | tf.Tensor,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: NoiseGradConfig | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     """
     NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
     by adding stochasticity to model's weights. The implementation is based
@@ -377,7 +377,7 @@ def noise_grad_plus_plus(
     y_batch: tf.Tensor,
     config: NoiseGradPlusPlusConfig | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     """
     NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
     by adding stochasticity to model's weights and model's inputs. The implementation is based
@@ -437,9 +437,9 @@ def _integrated_gradients_batched(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    num_steps: int,
+    num_steps: tf.Tensor,
     **kwargs,
-):
+) -> tf.Tensor:
     @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
     def int_grad_fn(xx_batch, yy_batch, nnum_steps, **kwargs):
         shape = tf.shape(xx_batch)
@@ -544,7 +544,7 @@ def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def interpolate_inputs(
-    baseline: tf.Tensor, target: tf.Tensor, num_steps: tf.Tensor
+    baseline: tf.Tensor, target: tf.Tensor, num_steps: int
 ) -> tf.Tensor:
     """Gets num_step linearly interpolated inputs from baseline to target."""
     delta = target - baseline

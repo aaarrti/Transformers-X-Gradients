@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Protocol,
-    overload,
-    runtime_checkable,
-)
+from typing import Callable, Protocol, overload, runtime_checkable, Tuple, List
 
 import tensorflow as tf
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 BaselineFn = Callable[[tf.Tensor], tf.Tensor]
-Explanation = tuple[list[str], tf.Tensor]
+Explanation = Tuple[List[str], tf.Tensor]
 ApplyNoiseFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
 
 
@@ -33,21 +28,21 @@ class ExplainFn(Protocol):
     def __call__(
         self,
         model: TFPreTrainedModel,
-        x_batch: list[str],
+        x_batch: List[str],
         y_batch: tf.Tensor,
         tokenizer: PreTrainedTokenizerBase,
         *args,
         **kwargs,
-    ) -> list[Explanation]:
+    ) -> List[Explanation]:
         ...
 
     def __call__(
         self,
         model: TFPreTrainedModel,
-        x_batch: list[str] | tf.Tensor,
+        x_batch: List[str] | tf.Tensor,
         y_batch: tf.Tensor,
         tokenizer: PreTrainedTokenizerBase | None,
         *args,
         **kwargs,
-    ) -> list[Explanation] | tf.Tensor:
+    ) -> List[Explanation] | tf.Tensor:
         ...
