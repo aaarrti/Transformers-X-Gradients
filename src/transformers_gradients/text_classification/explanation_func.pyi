@@ -3,30 +3,39 @@ from typing import overload, List, Optional
 import tensorflow as tf
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
-from transformers_gradients.types import (
-    Explanation,
+from transformers_gradients.types import Explanation
+from transformers_gradients.config import (
     IntGradConfig,
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
     SmoothGradConfing,
 )
 
+def gradient_norm(model, x_batch, y_batch, *args, **kwargs): ...
+@overload
 def gradient_norm(
     model: TFPreTrainedModel,
-    x_batch: List[str],
+    x_batch: list[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-) -> List[Explanation]: ...
+) -> list[Explanation]: ...
 @overload
 def gradient_norm(
     model: TFPreTrainedModel, x_batch: tf.Tensor, y_batch: tf.Tensor, **kwargs
 ) -> tf.Tensor: ...
 def gradient_x_input(
+    model,
+    x_batch,
+    y_batch,
+    tokenizer,
+): ...
+@overload
+def gradient_x_input(
     model: TFPreTrainedModel,
-    x_batch: List[str],
+    x_batch: list[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-) -> List[Explanation]: ...
+) -> tf.Tensor: ...
 @overload
 def gradient_x_input(
     model: TFPreTrainedModel, x_batch: tf.Tensor, y_batch: tf.Tensor, **kwargs

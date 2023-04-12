@@ -6,7 +6,6 @@ import tensorflow as tf
 from datasets import load_dataset
 from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 
-from transformers_gradients.model_wrapper import ModelWrapper, TokenizerWrapper
 from transformers_gradients.text_classification.explanation_func import (
     gradient_norm,
     gradient_x_input,
@@ -26,17 +25,15 @@ from transformers_gradients.util import is_xla_compatible_platform, get_input_id
 
 @pytest.fixture(scope="session")
 def sst2_model():
-    return ModelWrapper(
-        TFAutoModelForSequenceClassification.from_pretrained(
-            "distilbert-base-uncased-finetuned-sst-2-english"
-        )
+    return TFAutoModelForSequenceClassification.from_pretrained(
+        "distilbert-base-uncased-finetuned-sst-2-english"
     )
 
 
 @pytest.fixture(scope="session")
 def sst2_tokenizer():
-    return TokenizerWrapper(
-        AutoTokenizer.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
+    return AutoTokenizer.from_pretrained(
+        "distilbert-base-uncased-finetuned-sst-2-english"
     )
 
 
@@ -62,7 +59,7 @@ def sst2_batch():
 def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     x_batch = sst2_batch[0]
     input_ids, predict_kwargs = get_input_ids(sst2_tokenizer, x_batch)
-    x_embeddings = sst2_model.model.get_input_embeddings()(input_ids)
+    x_embeddings = sst2_model.get_input_embeddings()(input_ids)
     return x_embeddings, sst2_batch[1], predict_kwargs
 
 
@@ -82,10 +79,7 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
             integrated_gradients,
             config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
         ),
-        pytest.param(
-            partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
-            marks=pytest.mark.skip,
-        ),
+        partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
         partial(noise_grad, config=NoiseGradConfig(n=2, explain_fn="GradNorm")),
         partial(
             noise_grad_plus_plus,
@@ -128,10 +122,7 @@ def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
             integrated_gradients,
             config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
         ),
-        pytest.param(
-            partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
-            marks=pytest.mark.skip,
-        ),
+        partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
         partial(noise_grad, config=NoiseGradConfig(n=2, explain_fn="GradNorm")),
         partial(
             noise_grad_plus_plus,

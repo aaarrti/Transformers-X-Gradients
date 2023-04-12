@@ -75,7 +75,7 @@ class SmoothGradConfing(NamedTuple):
 
     n: int = 10
     mean: float = 1.0
-    std = 0.2
+    std: float = 0.2
     explain_fn: Union[ExplainFn, str] = "IntGrad"
     noise_fn: ApplyNoiseFn = tf.function(
         reduce_retracing=True, jit_compile=is_xla_compatible_platform()
@@ -126,9 +126,6 @@ def update_config(**kwargs):
 def resolve_baseline_explain_fn(explain_fn):
     if isinstance(explain_fn, Callable):
         return explain_fn  # type: ignore
-
-    if explain_fn in ("SmoothGrad", "NoiseGrad", "NoiseGrad++"):
-        raise ValueError(f"Can't use NoiseGrad as baseline xai method for NoiseGrad.")
 
     from transformers_gradients.text_classification.explanation_func import (
         integrated_gradients,

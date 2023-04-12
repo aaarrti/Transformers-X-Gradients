@@ -1,21 +1,14 @@
 from __future__ import annotations
 
-from functools import partial, singledispatch, wraps
-from typing import Callable, Dict, List, Optional, Union
 import gc
+from functools import wraps, partial
+from operator import itemgetter
 
-import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability.python.distributions.normal import Normal
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
-from transformers_gradients.types import (
-    Explanation,
-    ModelI,
-    TokenizerI,
-    BaselineFn,
-)
 from transformers_gradients.config import (
     IntGradConfig,
     NoiseGradPlusPlusConfig,
@@ -23,34 +16,39 @@ from transformers_gradients.config import (
     SmoothGradConfing,
     resolve_baseline_explain_fn,
 )
+from transformers_gradients.types import (
+    Explanation,
+)
 from transformers_gradients.util import (
     value_or_default,
     is_xla_compatible_platform,
     get_input_ids,
     as_tensor,
+    map_dict,
 )
 
 
 def plain_text_hook(func):
     @wraps(func)
     def wrapper(
-        model: ModelI,
+        model: TFPreTrainedModel,
         x_batch: list[str] | tf.Tensor,
         y_batch: tf.Tensor,
-        tokenizer: TokenizerI | None = None,
-        *args,
+        tokenizer: PreTrainedTokenizerBase | None = None,
         **kwargs,
     ):
         if isinstance(x_batch[0], str):
             input_ids, predict_kwargs = get_input_ids(tokenizer, x_batch)
-            embeddings = model.embedding_lookup(input_ids)
-            scores = func(model, embeddings, y_batch, *args, **predict_kwargs)
+            embeddings = model.get_input_embeddings()(input_ids)
+            scores = func(
+                model, embeddings, as_tensor(y_batch), **kwargs, **predict_kwargs
+            )
             return [
                 (tokenizer.convert_ids_to_tokens(list(i)), j)
                 for i, j in zip(input_ids, scores)
             ]
         else:
-            return func(model, x_batch, y_batch, *args, **kwargs)
+            return func(model, as_tensor(x_batch), as_tensor(y_batch), **kwargs)
 
     return wrapper
 
@@ -58,12 +56,11 @@ def plain_text_hook(func):
 @plain_text_hook
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def gradient_norm(
-    model: ModelI,
-    x_batch: list[str] | tf.Tensor,
+    model: TFPreTrainedModel,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     """
     A baseline GradientNorm text-classification explainer.
     The implementation is based on https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L38.
@@ -86,8 +83,6 @@ def gradient_norm(
         A batch of plain text inputs or their embeddings, which are subjects to explanation.
     y_batch:
         A batch of labels, which are subjects to explanation.
-    tokenizer:
-        Optional tokenizer, which should be passed in case x_batch is plain-text.
 
     kwargs:
         If x_batch is embeddings, kwargs can be used to pass, additional forward pass kwargs, e.g., attention mask.
@@ -98,25 +93,29 @@ def gradient_norm(
         List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
 
     """
-    x_batch = as_tensor(x_batch)
-    with tf.GradientTape() as tape:
-        tape.watch(x_batch)
-        logits = model(inputs_embeds=x_batch, **kwargs)
-        logits_for_label = logits_for_labels(logits, y_batch)
 
-    grads = tape.gradient(logits_for_label, x_batch)
-    return tf.linalg.norm(grads, axis=-1)
+    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    def grad_norm_fn(xx_batch, yy_batch, **kwargs):
+        with tf.GradientTape() as tape:
+            tape.watch(xx_batch)
+            logits = model(
+                None, inputs_embeds=xx_batch, training=False, **kwargs
+            ).logits
+            logits_for_label = logits_for_labels(logits, yy_batch)
+
+        grads = tape.gradient(logits_for_label, xx_batch)
+        return tf.linalg.norm(grads, axis=-1)
+
+    return grad_norm_fn(x_batch, y_batch, **kwargs)
 
 
 @plain_text_hook
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def gradient_x_input(
-    model: ModelI,
-    x_batch: list[str] | tf.Tensor,
+    model: TFPreTrainedModel,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     """
     A baseline GradientXInput text-classification explainer.
      The implementation is based on https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L108.
@@ -149,25 +148,29 @@ def gradient_x_input(
         List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
 
     """
-    x_batch = as_tensor(x_batch)
-    with tf.GradientTape() as tape:
-        tape.watch(x_batch)
-        logits = model(inputs_embeds=x_batch, **kwargs)
-        logits_for_label = logits_for_labels(logits, y_batch)
-    grads = tape.gradient(logits_for_label, x_batch)
-    return tf.math.reduce_sum(x_batch * grads, axis=-1)
+
+    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    def grad_x_input_fn(xx_batch, yy_batch, **kwargs):
+        with tf.GradientTape() as tape:
+            tape.watch(xx_batch)
+            logits = model(
+                None, inputs_embeds=xx_batch, training=False, **kwargs
+            ).logits
+            logits_for_label = logits_for_labels(logits, yy_batch)
+        grads = tape.gradient(logits_for_label, xx_batch)
+        return tf.math.reduce_sum(xx_batch * grads, axis=-1)
+
+    return grad_x_input_fn(x_batch, y_batch, **kwargs)
 
 
 @plain_text_hook
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def integrated_gradients(
-    model: ModelI,
-    x_batch: list[str] | tf.Tensor,
+    model: TFPreTrainedModel,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     config: IntGradConfig | None = None,
     **kwargs,
-) -> list[Explanation] | tf.Tensor:
+) -> tf.Tensor:
     """
     A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:
         - Convert inputs to models latent representations.
@@ -214,69 +217,80 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    x_batch = as_tensor(x_batch)
+    interpolated_embeddings = tf.vectorized_map(
+        lambda i: interpolate_inputs(
+            config.baseline_fn(i), i, tf.constant(config.num_steps)
+        ),
+        x_batch,
+    )
+
     if config.batch_interpolated_inputs:
         return _integrated_gradients_batched(
             model,
-            x_batch,
+            interpolated_embeddings,
             y_batch,
-            config.num_steps,
-            config.baseline_fn,
+            tf.constant(config.num_steps),
             **kwargs,
         )
     else:
         return _integrated_gradients_iterative(
             model,
-            x_batch,
+            interpolated_embeddings,
             y_batch,
-            config.num_steps,
-            config.baseline_fn,
             **kwargs,
         )
 
 
 @plain_text_hook
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def smooth_grad(
-    model: ModelI,
-    x_batch: list[str] | tf.Tensor,
+    model: TFPreTrainedModel,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     config: SmoothGradConfing | None = None,
     **kwargs,
 ) -> list[Explanation] | tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
 
-    explanations_array = tf.TensorArray(
-        x_batch.dtype,
-        size=config.n,
-        clear_after_read=True,
-        colocate_with_first_write_call=True,
+    def smooth_grad_fn(xx_batch, yy_batch, n, mean, std, **kwargs):
+        explanations_array = tf.TensorArray(
+            xx_batch.dtype,
+            size=n,
+            clear_after_read=True,
+            colocate_with_first_write_call=True,
+        )
+
+        noise_dist = Normal(mean, std)
+
+        def noise_fn(x):
+            noise = noise_dist.sample(tf.shape(x))
+            return config.noise_fn(x, noise)
+
+        for n in tf.range(n):
+            noisy_x = noise_fn(xx_batch)
+            explanation = explain_fn(model, noisy_x, yy_batch, **kwargs)
+            explanations_array = explanations_array.write(n, explanation)
+
+        scores = tf.reduce_mean(explanations_array.stack(), axis=0)
+        explanations_array.close()
+        return scores
+
+    return smooth_grad_fn(
+        x_batch,
+        y_batch,
+        tf.constant(config.n),
+        tf.constant(config.mean),
+        tf.constant(config.std),
+        **kwargs,
     )
-
-    noise_dist = Normal(config.mean, config.std)
-
-    def noise_fn(x):
-        noise = noise_dist.sample(tf.shape(x))
-        return config.noise_fn(x, noise)
-
-    for n in tf.range(config.n):
-        noisy_x = noise_fn(x_batch)
-        explanation = explain_fn(model, noisy_x, y_batch, **kwargs)
-        explanations_array = explanations_array.write(n, explanation)
-
-    scores = tf.reduce_mean(explanations_array.stack(), axis=0)
-    explanations_array.close()
-    return scores
 
 
 @plain_text_hook
 def noise_grad(
-    model: ModelI,
+    model: TFPreTrainedModel,
     x_batch: list[str] | tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     config: NoiseGradConfig | None = None,
     **kwargs,
 ) -> list[Explanation] | tf.Tensor:
@@ -321,9 +335,9 @@ def noise_grad(
 
     """
 
-    config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
+    config = value_or_default(config, lambda: NoiseGradConfig())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
-    original_weights = model.model.weights.copy()
+    original_weights = model.weights.copy()
 
     explanations_array = tf.TensorArray(
         x_batch.dtype,
@@ -343,13 +357,13 @@ def noise_grad(
             noise_fn,
             original_weights,
         )
-        model.model.set_weights(noisy_weights)
+        model.set_weights(noisy_weights)
 
         explanation = explain_fn(model, x_batch, y_batch, **kwargs)
         explanations_array = explanations_array.write(n, explanation)
 
     scores = tf.reduce_mean(explanations_array.stack(), axis=0)
-    model.model.set_weights(original_weights)
+    model.set_weights(original_weights)
     explanations_array.close()
     tf.keras.backend.clear_session()
     gc.collect()
@@ -358,10 +372,9 @@ def noise_grad(
 
 @plain_text_hook
 def noise_grad_plus_plus(
-    model: ModelI,
-    x_batch: list[str] | tf.Tensor,
+    model: TFPreTrainedModel,
+    x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    tokenizer: TokenizerI | None = None,
     config: NoiseGradPlusPlusConfig | None = None,
     **kwargs,
 ) -> list[Explanation] | tf.Tensor:
@@ -400,40 +413,20 @@ def noise_grad_plus_plus(
 
     """
     config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
-    explain_fn = resolve_baseline_explain_fn(config.explain_fn)
-
-    original_weights = model.model.get_weights().copy()
-
-    noise_dist = Normal(config.mean, config.std)
-    sg_noise_dist = Normal(config.sg_mean, config.sg_std)
-
-    explanations_array = tf.TensorArray(
-        x_batch.dtype,
-        size=config.n * config.m,
-        clear_after_read=True,
-        colocate_with_first_write_call=True,
+    sg_config = SmoothGradConfing(
+        n=config.m,
+        mean=config.sg_mean,
+        std=config.sg_std,
+        explain_fn=config.explain_fn,
+        noise_fn=config.noise_fn,
     )
-
-    def noise_fn(x):
-        noise = noise_dist.sample(tf.shape(x))
-        return config.noise_fn(x, noise)
-
-    def sg_noise_fn(x):
-        noise = sg_noise_dist.sample(tf.shape(x))
-        return config.noise_fn(x, noise)
-
-    for n in tf.range(config.n):
-        noisy_weights = tf.nest.map_structure(noise_fn, original_weights)
-        model.weights = noisy_weights
-
-        for m in tf.range(config.m):
-            noisy_embeddings = sg_noise_fn(x_batch)
-            explanation = explain_fn(model, noisy_embeddings, y_batch, **kwargs)  # type: ignore # noqa
-            explanations_array = explanations_array.write(n + m * config.m, explanation)
-
-    scores = tf.reduce_mean(explanations_array.stack(), axis=0)
-    model.model.set_weights(original_weights)
-    return scores
+    ng_config = NoiseGradConfig(
+        n=config.n,
+        mean=config.mean,
+        noise_fn=config.noise_fn,
+        explain_fn=partial(smooth_grad, config=sg_config),
+    )
+    return noise_grad(model, x_batch, y_batch, config=ng_config, **kwargs)
 
 
 # ----------------------- IntGrad ------------------------
@@ -441,68 +434,60 @@ def noise_grad_plus_plus(
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def _integrated_gradients_batched(
-    model: ModelI,
+    model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     num_steps: int,
-    baseline_fn: BaselineFn,
     **kwargs,
 ):
-    interpolated_embeddings = tf.vectorized_map(
-        lambda i: interpolate_inputs(baseline_fn(i), i, num_steps), x_batch
-    )
+    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    def int_grad_fn(xx_batch, yy_batch, nnum_steps, **kwargs):
+        shape = tf.shape(xx_batch)
+        batch_size = shape[0]
 
-    shape = tf.shape(interpolated_embeddings)
-    batch_size = shape[0]
+        interpolated_embeddings = tf.reshape(
+            tf.cast(xx_batch, dtype=tf.float32),
+            [-1, shape[2], shape[3]],
+        )
 
-    interpolated_embeddings = tf.reshape(
-        tf.cast(interpolated_embeddings, dtype=tf.float32),
-        [-1, shape[2], shape[3]],
-    )
+        def pseudo_interpolate(x):
+            og_shape = tf.convert_to_tensor(tf.shape(x))
+            new_shape = tf.concat([[nnum_steps + 1], og_shape], axis=0)
+            x = tf.broadcast_to(x, new_shape)
+            flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
+            x = tf.reshape(x, flat_shape)
+            return x
 
-    def pseudo_interpolate(x, n):
-        og_shape = tf.convert_to_tensor(tf.shape(x))
-        new_shape = tf.concat([tf.constant([n + 1]), og_shape], axis=0)
-        x = tf.broadcast_to(x, new_shape)
-        flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
-        x = tf.reshape(x, flat_shape)
-        return x
+        interpolated_kwargs = tf.nest.map_structure(pseudo_interpolate, kwargs)
+        interpolated_y_batch = pseudo_interpolate(yy_batch)
 
-    interpolated_kwargs = tf.nest.map_structure(
-        partial(pseudo_interpolate, n=num_steps), kwargs
-    )
-    interpolated_y_batch = pseudo_interpolate(y_batch, num_steps)
+        with tf.GradientTape() as tape:
+            tape.watch(interpolated_embeddings)
+            logits = model(
+                None,
+                inputs_embeds=interpolated_embeddings,
+                training=False,
+                **interpolated_kwargs,
+            ).logits
+            logits_for_label = logits_for_labels(logits, interpolated_y_batch)
 
-    with tf.GradientTape() as tape:
-        tape.watch(interpolated_embeddings)
-        # model(None, inputs_embeds=x_batch, training=False, **kwargs).logits
-        logits = model(interpolated_embeddings, **interpolated_kwargs)
-        logits_for_label = logits_for_labels(logits, interpolated_y_batch)
+        grads = tape.gradient(logits_for_label, interpolated_embeddings)
+        grads_shape = tf.shape(grads)
+        grads = tf.reshape(
+            grads, [batch_size, nnum_steps + 1, grads_shape[1], grads_shape[2]]
+        )
+        return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
 
-    grads = tape.gradient(logits_for_label, interpolated_embeddings)
-    grads_shape = tf.shape(grads)
-    grads = tf.reshape(
-        grads, [batch_size, num_steps + 1, grads_shape[1], grads_shape[2]]
-    )
-    return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
+    return int_grad_fn(x_batch, y_batch, num_steps, **kwargs)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def _integrated_gradients_iterative(
-    model: ModelI,
+    model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
-    num_steps: int,
-    baseline_fn: BaselineFn,
     **kwargs,
 ) -> tf.Tensor:
-    interpolated_embeddings_batch = tf.map_fn(
-        lambda x: interpolate_inputs(baseline_fn(x), x, num_steps),
-        x_batch,
-    )
-
-    batch_size = tf.shape(interpolated_embeddings_batch)[0]
-
+    batch_size = tf.shape(x_batch)[0]
     scores = tf.TensorArray(
         x_batch.dtype,
         size=batch_size,
@@ -514,16 +499,20 @@ def _integrated_gradients_iterative(
         return tf.broadcast_to(x, (tf.shape(embeds)[0], *x.shape))
 
     for i in tf.range(batch_size):
-        interpolated_embeddings = interpolated_embeddings_batch[i]
+        interpolated_embeddings = x_batch[i]
 
         interpolated_kwargs = tf.nest.map_structure(
             lambda x: pseudo_interpolate(x, interpolated_embeddings),
-            {k: v[i] for k, v in kwargs.items()},
+            map_dict(kwargs, itemgetter(i)),
         )
         with tf.GradientTape() as tape:
             tape.watch(interpolated_embeddings)
-            # model(None, inputs_embeds=x_batch, training=False, **kwargs).logits
-            logits = model(interpolated_embeddings, **interpolated_kwargs)
+            logits = model(
+                None,
+                inputs_embeds=interpolated_embeddings,
+                training=False,
+                **interpolated_kwargs,
+            ).logits
             logits_for_label = logits[:, y_batch[i]]
 
         grads = tape.gradient(logits_for_label, interpolated_embeddings)
@@ -555,7 +544,7 @@ def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def interpolate_inputs(
-    baseline: tf.Tensor, target: tf.Tensor, num_steps: int
+    baseline: tf.Tensor, target: tf.Tensor, num_steps: tf.Tensor
 ) -> tf.Tensor:
     """Gets num_step linearly interpolated inputs from baseline to target."""
     delta = target - baseline
