@@ -4,7 +4,6 @@ import platform
 from typing import TypeVar, Callable, Dict, List, Tuple
 
 import tensorflow as tf
-from cachetools import cached
 from transformers import PreTrainedTokenizerBase
 
 T = TypeVar("T")
@@ -35,10 +34,3 @@ def as_tensor(arr) -> tf.Tensor:
         return arr
     else:
         return tf.convert_to_tensor(arr)
-
-
-@cached(key=lambda f: f.__name__, cache={})
-def cached_tf_function(func):
-    return tf.function(
-        func, reduce_retracing=True, jit_compile=is_xla_compatible_platform()
-    )

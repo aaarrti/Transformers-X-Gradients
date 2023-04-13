@@ -163,8 +163,3 @@ def test_explain_on_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tok
     for s in explanations:
         assert isinstance(s, tf.Tensor)
         assert not np.isnan(s).any()
-
-
-def test_variable_number_of_arguments():
-    # TODO test call with different number of args/kwargs
-    pytest.fail("Not Implemented")

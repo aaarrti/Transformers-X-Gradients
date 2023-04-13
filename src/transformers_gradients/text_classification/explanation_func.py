@@ -22,7 +22,6 @@ from transformers_gradients.util import (
     is_xla_compatible_platform,
     get_input_ids,
     as_tensor,
-    cached_tf_function,
 )
 
 
@@ -90,20 +89,13 @@ def gradient_norm(
         List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
 
     """
+    with tf.GradientTape() as tape:
+        tape.watch(x_batch)
+        logits = model(None, inputs_embeds=x_batch, training=False, **kwargs).logits
+        logits_for_label = logits_for_labels(logits, y_batch)
 
-    # @cached_tf_function
-    def grad_norm_fn(xx_batch, yy_batch, **kwargs):
-        with tf.GradientTape() as tape:
-            tape.watch(xx_batch)
-            logits = model(
-                None, inputs_embeds=xx_batch, training=False, **kwargs
-            ).logits
-            logits_for_label = logits_for_labels(logits, yy_batch)
-
-        grads = tape.gradient(logits_for_label, xx_batch)
-        return tf.linalg.norm(grads, axis=-1)
-
-    return grad_norm_fn(x_batch, y_batch, **tf.nest.map_structure(as_tensor, kwargs))
+    grads = tape.gradient(logits_for_label, x_batch)
+    return tf.linalg.norm(grads, axis=-1)
 
 
 @plain_text_hook
@@ -145,19 +137,12 @@ def gradient_x_input(
         List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
 
     """
-
-    # @cached_tf_function
-    def grad_x_input_fn(xx_batch, yy_batch, **kwargs):
-        with tf.GradientTape() as tape:
-            tape.watch(xx_batch)
-            logits = model(
-                None, inputs_embeds=xx_batch, training=False, **kwargs
-            ).logits
-            logits_for_label = logits_for_labels(logits, yy_batch)
-        grads = tape.gradient(logits_for_label, xx_batch)
-        return tf.math.reduce_sum(xx_batch * grads, axis=-1)
-
-    return grad_x_input_fn(x_batch, y_batch, **tf.nest.map_structure(as_tensor, kwargs))
+    with tf.GradientTape() as tape:
+        tape.watch(x_batch)
+        logits = model(None, inputs_embeds=x_batch, training=False, **kwargs).logits
+        logits_for_label = logits_for_labels(logits, y_batch)
+    grads = tape.gradient(logits_for_label, x_batch)
+    return tf.math.reduce_sum(x_batch * grads, axis=-1)
 
 
 @plain_text_hook
@@ -214,7 +199,6 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    # tf.vectorized_map(
     interpolated_embeddings = tf.map_fn(
         lambda i: interpolate_inputs(
             config.baseline_fn(i), i, tf.constant(config.num_steps)
@@ -251,38 +235,27 @@ def smooth_grad(
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
 
-    # @cached_tf_function
-    def smooth_grad_fn(xx_batch, yy_batch, n, mean, std, **kwargs):
-        explanations_array = tf.TensorArray(
-            xx_batch.dtype,
-            size=n,
-            clear_after_read=True,
-            colocate_with_first_write_call=True,
-        )
-
-        noise_dist = Normal(mean, std)
-
-        def noise_fn(x):
-            noise = noise_dist.sample(tf.shape(x))
-            return config.noise_fn(x, noise)
-
-        for n in tf.range(n):
-            noisy_x = noise_fn(xx_batch)
-            explanation = explain_fn(model, noisy_x, yy_batch, **kwargs)
-            explanations_array = explanations_array.write(n, explanation)
-
-        scores = tf.reduce_mean(explanations_array.stack(), axis=0)
-        explanations_array.close()
-        return scores
-
-    return smooth_grad_fn(
-        x_batch,
-        y_batch,
-        tf.constant(config.n),
-        tf.constant(config.mean),
-        tf.constant(config.std),
-        **tf.nest.map_structure(as_tensor, kwargs),
+    explanations_array = tf.TensorArray(
+        x_batch.dtype,
+        size=config.n,
+        clear_after_read=True,
+        colocate_with_first_write_call=True,
     )
+
+    noise_dist = Normal(config.mean, config.std)
+
+    def noise_fn(x):
+        noise = noise_dist.sample(tf.shape(x))
+        return config.noise_fn(x, noise)
+
+    for n in tf.range(config.n):
+        noisy_x = noise_fn(x_batch)
+        explanation = explain_fn(model, noisy_x, y_batch, **kwargs)
+        explanations_array = explanations_array.write(n, explanation)
+
+    scores = tf.reduce_mean(explanations_array.stack(), axis=0)
+    explanations_array.close()
+    return scores
 
 
 @plain_text_hook
@@ -438,47 +411,41 @@ def _integrated_gradients_batched(
     num_steps: tf.Tensor,
     **kwargs,
 ) -> tf.Tensor:
-    # @cached_tf_function
-    def int_grad_fn(xx_batch, yy_batch, nnum_steps, **kwargs):
-        shape = tf.shape(xx_batch)
-        batch_size = shape[0]
+    shape = tf.shape(x_batch)
+    batch_size = shape[0]
 
-        interpolated_embeddings = tf.reshape(
-            tf.cast(xx_batch, dtype=tf.float32),
-            [-1, shape[2], shape[3]],
-        )
-
-        def pseudo_interpolate(x):
-            og_shape = tf.convert_to_tensor(tf.shape(x))
-            new_shape = tf.concat([[nnum_steps + 1], og_shape], axis=0)
-            x = tf.broadcast_to(x, new_shape)
-            flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
-            x = tf.reshape(x, flat_shape)
-            return x
-
-        interpolated_kwargs = tf.nest.map_structure(pseudo_interpolate, kwargs)
-        interpolated_y_batch = pseudo_interpolate(yy_batch)
-
-        with tf.GradientTape() as tape:
-            tape.watch(interpolated_embeddings)
-            logits = model(
-                None,
-                inputs_embeds=interpolated_embeddings,
-                training=False,
-                **interpolated_kwargs,
-            ).logits
-            logits_for_label = logits_for_labels(logits, interpolated_y_batch)
-
-        grads = tape.gradient(logits_for_label, interpolated_embeddings)
-        grads_shape = tf.shape(grads)
-        grads = tf.reshape(
-            grads, [batch_size, nnum_steps + 1, grads_shape[1], grads_shape[2]]
-        )
-        return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
-
-    return int_grad_fn(
-        x_batch, y_batch, num_steps, **tf.nest.map_structure(as_tensor, kwargs)
+    interpolated_embeddings = tf.reshape(
+        tf.cast(x_batch, dtype=tf.float32),
+        [-1, shape[2], shape[3]],
     )
+
+    def pseudo_interpolate(x):
+        og_shape = tf.convert_to_tensor(tf.shape(x))
+        new_shape = tf.concat([[num_steps + 1], og_shape], axis=0)
+        x = tf.broadcast_to(x, new_shape)
+        flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
+        x = tf.reshape(x, flat_shape)
+        return x
+
+    interpolated_kwargs = tf.nest.map_structure(pseudo_interpolate, kwargs)
+    interpolated_y_batch = pseudo_interpolate(y_batch)
+
+    with tf.GradientTape() as tape:
+        tape.watch(interpolated_embeddings)
+        logits = model(
+            None,
+            inputs_embeds=interpolated_embeddings,
+            training=False,
+            **interpolated_kwargs,
+        ).logits
+        logits_for_label = logits_for_labels(logits, interpolated_y_batch)
+
+    grads = tape.gradient(logits_for_label, interpolated_embeddings)
+    grads_shape = tf.shape(grads)
+    grads = tf.reshape(
+        grads, [batch_size, num_steps + 1, grads_shape[1], grads_shape[2]]
+    )
+    return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
 
 
 def _integrated_gradients_iterative(
@@ -496,7 +463,8 @@ def _integrated_gradients_iterative(
     )
 
     def pseudo_interpolate(x, embeds):
-        return tf.broadcast_to(x, (tf.shape(embeds)[0], *x.shape))
+        x_shape = tf.shape(x)
+        return tf.broadcast_to(x, (tf.shape(embeds)[0], *x_shape))
 
     for i in tf.range(batch_size):
         interpolated_embeddings = x_batch[i]
