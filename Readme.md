@@ -6,38 +6,38 @@ Collection of gradient-based XAI methods for TensorFlow models from HuggingFace 
 
 Work in Progress!!!
 
-<div>
-    <style>
-        .container {
-            line-height: 1.4;
-            text-align: center;
-            margin: 10px 10px 10px 10px;
-            color: black;
-            background: white;
-        }
-        p {
-            font-size: 16px;
-        }
-        .highlight-container, .highlight {
-            position: relative;
-            border-radius: 10% 10% 10% 10%;
-        }
-        .highlight-container {
-            display: inline-block;
-        }
-        .highlight-container:before {
-            content: " ";
-            display: block;
-            height: 90%;
-            width: 100%;
-            margin-left: -3px;
-            margin-right: -3px;
-            position: absolute;
-            top: -1px;
-            left: -1px;
-            padding: 10px 3px 3px 10px;
-        }
-    </style>
+
+<style>
+    .container {
+        line-height: 1.4;
+        text-align: center;
+        margin: 10px 10px 10px 10px;
+        color: black;
+        background: white;
+    }
+    p {
+        font-size: 16px;
+    }
+    .highlight-container, .highlight {
+        position: relative;
+        border-radius: 10% 10% 10% 10%;
+    }
+    .highlight-container {
+        display: inline-block;
+    }
+    .highlight-container:before {
+        content: " ";
+        display: block;
+        height: 90%;
+        width: 100%;
+        margin-left: -3px;
+        margin-right: -3px;
+        position: absolute;
+        top: -1px;
+        left: -1px;
+        padding: 10px 3px 3px 10px;
+    }
+</style>
 <div class="container">
     <p> Gradient Norm <br>
         <span class="highlight-container" style="background:rgb(255.0,0.0,0.0);">
@@ -899,5 +899,4 @@ Work in Progress!!!
             <span class="highlight"> [SEP] </span>
         </span>
     </p>
-</div>
 </div>
