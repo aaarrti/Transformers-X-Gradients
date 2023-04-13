@@ -91,7 +91,7 @@ def gradient_norm(
 
     """
 
-    @cached_tf_function
+    # @cached_tf_function
     def grad_norm_fn(xx_batch, yy_batch, **kwargs):
         with tf.GradientTape() as tape:
             tape.watch(xx_batch)
@@ -146,7 +146,7 @@ def gradient_x_input(
 
     """
 
-    @cached_tf_function
+    # @cached_tf_function
     def grad_x_input_fn(xx_batch, yy_batch, **kwargs):
         with tf.GradientTape() as tape:
             tape.watch(xx_batch)
@@ -251,7 +251,7 @@ def smooth_grad(
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
 
-    @cached_tf_function
+    # @cached_tf_function
     def smooth_grad_fn(xx_batch, yy_batch, n, mean, std, **kwargs):
         explanations_array = tf.TensorArray(
             xx_batch.dtype,
@@ -438,7 +438,7 @@ def _integrated_gradients_batched(
     num_steps: tf.Tensor,
     **kwargs,
 ) -> tf.Tensor:
-    @cached_tf_function
+    # @cached_tf_function
     def int_grad_fn(xx_batch, yy_batch, nnum_steps, **kwargs):
         shape = tf.shape(xx_batch)
         batch_size = shape[0]
