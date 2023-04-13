@@ -2,9 +2,6 @@ name: Run Tests
 
 on: [ pull_request, workflow_dispatch ]
 
-env:
-  CI: true
-
 jobs:
   build:
 
@@ -33,3 +30,4 @@ jobs:
         run: tox run --skip-pkg-install -- --durations=10
         env:
           TF_XLA_FLAGS: "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
+          CI: true
