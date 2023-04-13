@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import platform
-from typing import TypeVar, Callable, Dict, NamedTuple, List, Tuple
+from typing import TypeVar, Callable, Dict, List, Tuple
 
 import tensorflow as tf
+from cachetools import cached
 from transformers import PreTrainedTokenizerBase
 
 T = TypeVar("T")
-R = TypeVar("R")
 
 
 def get_input_ids(
@@ -30,21 +30,15 @@ def is_xla_compatible_platform() -> bool:
     return not (platform.system() == "Darwin" and "arm" in platform.processor().lower())
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def as_tensor(arr) -> tf.Tensor:
-    if isinstance(arr, (tf.Tensor, NamedTuple, Callable)):
+    if isinstance(arr, (tf.Tensor, Callable)):  # type: ignore
         return arr
     else:
         return tf.convert_to_tensor(arr)
 
 
-def map_dict(
-    dictionary: Dict[str, T],
-    value_mapper: Callable[[T], R],
-    key_mapper: Callable[[str], str] = lambda x: x,
-) -> Dict[str, R]:
-    """Applies func to values in dict. Additionally, if provided can also map keys."""
-    result = {}
-    for k, v in dictionary.items():
-        result[key_mapper(k)] = value_mapper(v)
-    return result
+@cached(key=lambda f: f.__name__, cache={})
+def cached_tf_function(func):
+    return tf.function(
+        func, reduce_retracing=True, jit_compile=is_xla_compatible_platform()
+    )

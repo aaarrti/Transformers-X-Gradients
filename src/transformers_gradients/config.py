@@ -49,7 +49,7 @@ class NoiseGradConfig(NamedTuple):
 
     n: int = 10
     mean: float = 1.0
-    std: float = 0.2
+    std: float = 0.0055
     explain_fn: Union[ExplainFn, str] = "IntGrad"
     noise_fn: ApplyNoiseFn = tf.function(
         reduce_retracing=True, jit_compile=is_xla_compatible_platform()
@@ -75,7 +75,7 @@ class SmoothGradConfing(NamedTuple):
 
     n: int = 10
     mean: float = 1.0
-    std: float = 0.2
+    std: float = 0.0055
     explain_fn: Union[ExplainFn, str] = "IntGrad"
     noise_fn: ApplyNoiseFn = tf.function(
         reduce_retracing=True, jit_compile=is_xla_compatible_platform()
@@ -110,8 +110,8 @@ class NoiseGradPlusPlusConfig(NamedTuple):
     m: int = 10
     mean: float = 1.0
     sg_mean: float = 0.0
-    std: float = 0.2
-    sg_std: float = 0.4
+    std: float = 0.0055
+    sg_std: float = 0.05
     explain_fn: Union[ExplainFn, str] = "IntGrad"
     noise_fn: ApplyNoiseFn = tf.function(
         reduce_retracing=True, jit_compile=is_xla_compatible_platform()

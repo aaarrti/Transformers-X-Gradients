@@ -36,7 +36,7 @@ class ExplainFn(Protocol):
     ) -> List[Explanation]:
         ...
 
-    def __call__(
+    def __call__(  # type: ignore
         self,
         model: TFPreTrainedModel,
         x_batch: List[str] | tf.Tensor,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 from functools import wraps, partial
 from operator import itemgetter
+from typing import List
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -16,15 +17,12 @@ from transformers_gradients.config import (
     SmoothGradConfing,
     resolve_baseline_explain_fn,
 )
-from transformers_gradients.types import (
-    Explanation,
-)
 from transformers_gradients.util import (
     value_or_default,
     is_xla_compatible_platform,
     get_input_ids,
     as_tensor,
-    map_dict,
+    cached_tf_function,
 )
 
 
@@ -54,7 +52,6 @@ def plain_text_hook(func):
 
 
 @plain_text_hook
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def gradient_norm(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -94,7 +91,7 @@ def gradient_norm(
 
     """
 
-    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    @cached_tf_function
     def grad_norm_fn(xx_batch, yy_batch, **kwargs):
         with tf.GradientTape() as tape:
             tape.watch(xx_batch)
@@ -106,7 +103,7 @@ def gradient_norm(
         grads = tape.gradient(logits_for_label, xx_batch)
         return tf.linalg.norm(grads, axis=-1)
 
-    return grad_norm_fn(x_batch, y_batch, **kwargs)
+    return grad_norm_fn(x_batch, y_batch, **tf.nest.map_structure(as_tensor, kwargs))
 
 
 @plain_text_hook
@@ -149,7 +146,7 @@ def gradient_x_input(
 
     """
 
-    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    @cached_tf_function
     def grad_x_input_fn(xx_batch, yy_batch, **kwargs):
         with tf.GradientTape() as tape:
             tape.watch(xx_batch)
@@ -160,7 +157,7 @@ def gradient_x_input(
         grads = tape.gradient(logits_for_label, xx_batch)
         return tf.math.reduce_sum(xx_batch * grads, axis=-1)
 
-    return grad_x_input_fn(x_batch, y_batch, **kwargs)
+    return grad_x_input_fn(x_batch, y_batch, **tf.nest.map_structure(as_tensor, kwargs))
 
 
 @plain_text_hook
@@ -217,12 +214,14 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    interpolated_embeddings = tf.vectorized_map(
+    # tf.vectorized_map(
+    interpolated_embeddings = tf.map_fn(
         lambda i: interpolate_inputs(
             config.baseline_fn(i), i, tf.constant(config.num_steps)
         ),
         x_batch,
     )
+    kwargs = tf.nest.map_structure(as_tensor, kwargs)
 
     if config.batch_interpolated_inputs:
         return _integrated_gradients_batched(
@@ -230,7 +229,7 @@ def integrated_gradients(
             interpolated_embeddings,
             y_batch,
             tf.constant(config.num_steps),
-            **kwargs,
+            **tf.nest.map_structure(as_tensor, kwargs),
         )
     else:
         return _integrated_gradients_iterative(
@@ -252,7 +251,7 @@ def smooth_grad(
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(config.explain_fn)
 
-    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    @cached_tf_function
     def smooth_grad_fn(xx_batch, yy_batch, n, mean, std, **kwargs):
         explanations_array = tf.TensorArray(
             xx_batch.dtype,
@@ -282,7 +281,7 @@ def smooth_grad(
         tf.constant(config.n),
         tf.constant(config.mean),
         tf.constant(config.std),
-        **kwargs,
+        **tf.nest.map_structure(as_tensor, kwargs),
     )
 
 
@@ -432,7 +431,6 @@ def noise_grad_plus_plus(
 # ----------------------- IntGrad ------------------------
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def _integrated_gradients_batched(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -440,7 +438,7 @@ def _integrated_gradients_batched(
     num_steps: tf.Tensor,
     **kwargs,
 ) -> tf.Tensor:
-    @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+    @cached_tf_function
     def int_grad_fn(xx_batch, yy_batch, nnum_steps, **kwargs):
         shape = tf.shape(xx_batch)
         batch_size = shape[0]
@@ -478,7 +476,9 @@ def _integrated_gradients_batched(
         )
         return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
 
-    return int_grad_fn(x_batch, y_batch, num_steps, **kwargs)
+    return int_grad_fn(
+        x_batch, y_batch, num_steps, **tf.nest.map_structure(as_tensor, kwargs)
+    )
 
 
 def _integrated_gradients_iterative(
@@ -501,9 +501,11 @@ def _integrated_gradients_iterative(
     for i in tf.range(batch_size):
         interpolated_embeddings = x_batch[i]
 
+        kwargs_i = tf.nest.map_structure(itemgetter(i), kwargs)
+
         interpolated_kwargs = tf.nest.map_structure(
-            lambda x: pseudo_interpolate(x, interpolated_embeddings),
-            map_dict(kwargs, itemgetter(i)),
+            partial(pseudo_interpolate, embeds=interpolated_embeddings),
+            kwargs_i,
         )
         with tf.GradientTape() as tape:
             tape.watch(interpolated_embeddings)
