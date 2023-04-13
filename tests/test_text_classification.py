@@ -1,4 +1,5 @@
 from functools import partial
+from os import environ
 
 import numpy as np
 import pytest
@@ -33,6 +34,9 @@ from transformers_gradients.util import is_xla_compatible_platform, get_input_id
 #    yield
 #
 #    tf.profiler.experimental.stop()
+
+
+skip_in_ci = pytest.mark.skipif("CI" in environ, reason="OOM in GitHub action.")
 
 
 @pytest.fixture(scope="session")
@@ -87,9 +91,12 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
                 baseline_fn=lambda x: tf.zeros_like(x, dtype=x.dtype),
             ),
         ),
-        partial(
-            integrated_gradients,
-            config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
+        pytest.param(
+            partial(
+                integrated_gradients,
+                config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
+            ),
+            marks=skip_in_ci,
         ),
         partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
         partial(noise_grad, config=NoiseGradConfig(n=2, explain_fn="GradNorm")),
@@ -130,9 +137,12 @@ def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
                 baseline_fn=lambda x: tf.zeros_like(x, dtype=x.dtype),
             ),
         ),
-        partial(
-            integrated_gradients,
-            config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
+        pytest.param(
+            partial(
+                integrated_gradients,
+                config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
+            ),
+            marks=skip_in_ci,
         ),
         partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
         partial(noise_grad, config=NoiseGradConfig(n=2, explain_fn="GradNorm")),
