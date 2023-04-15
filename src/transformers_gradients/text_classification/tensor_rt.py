@@ -1,74 +1,40 @@
 from __future__ import annotations
 
-import tempfile
 from functools import wraps, partial
-from typing import Protocol, runtime_checkable, Mapping, Callable, List
+from typing import Callable, List
 
 import tensorflow as tf
 import tensorflow_probability as tfp
-from absl import logging as log
-from tensorflow.python.compiler.tensorrt import trt_convert as trt
 from tensorflow.python.saved_model.signature_constants import (
     DEFAULT_SERVING_SIGNATURE_DEF_KEY,
 )
-from tensorflow.python.trackable.data_structures import ListWrapper
-from tensorflow.python.types.core import GenericFunction
 from tensorflow_probability.python.distributions.normal import Normal
-from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase
 
-
-from transformers_gradients.config import (
+from transformers_gradients.functions import (
+    logits_for_labels,
+    interpolate_inputs,
+    zeros_baseline,
+    multiplicative_noise,
+    pseudo_interpolate,
+)
+from transformers_gradients.types import (
     SmoothGradConfing,
     IntGradConfig,
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
-    ModelConfig,
+    UserObject,
+    BaselineFn,
+    ApplyNoiseFn,
+    ExplainFn,
+    BaselineExplainFn,
 )
-from transformers_gradients.util import (
-    logits_for_labels,
-    as_tensor,
-    bounding_shape,
-    value_or_default,
-    interpolate_inputs,
-    zeros_baseline,
-    multiplicative_noise,
-    is_xla_compatible_platform,
-    get_input_ids,
-)
+from transformers_gradients.util import value_or_default, encode_inputs, tensor_inputs
 
 
-@runtime_checkable
-class ModelFn(Protocol):
-    def __call__(
-        self, *, inputs_embeds: tf.Tensor, attention_mask: tf.Tensor
-    ) -> Mapping[str, tf.Tensor]:
-        ...
-
-
-@runtime_checkable
-class UserObject(Protocol):
-    signatures: Mapping[str, ModelFn]
-    variables: ListWrapper[tf.Variable]
-
-
-def tensor_inputs(func):
-    @wraps(func)
-    def wrapper(
-        model: UserObject,
-        x_batch: tf.Tensor,
-        y_batch: tf.Tensor,
-        attention_mask: tf.Tensor | None = None,
-        **kwargs,
-    ):
-        x_batch = as_tensor(x_batch)
-        y_batch = as_tensor(y_batch)
-        attention_mask = value_or_default(
-            attention_mask, lambda: tf.ones(bounding_shape(x_batch), dtype=tf.int32)
-        )
-        attention_mask = as_tensor(attention_mask)
-        return func(model, x_batch, y_batch, attention_mask, **kwargs)
-
-    return wrapper
+# It was designed with TensorRT in mind, but fused TensorRT kernel don't have gradients, e.g.,
+# LookupError: No gradient defined for operation'TRTEngineOp_000_001' (op type: TRTEngineOp).
+# But it still can be used with saved model API, for a bit of speed up.
 
 
 def plain_text_hook(func):
@@ -89,8 +55,7 @@ def plain_text_hook(func):
         if tokenizer is None or embeddings_lookup_fn is None:
             raise ValueError
 
-        input_ids, predict_kwargs = get_input_ids(tokenizer, x_batch)
-        attention_mask = predict_kwargs.get("attention_mask")
+        input_ids, attention_mask = encode_inputs(tokenizer, x_batch)
         embeddings = embeddings_lookup_fn(model, input_ids)
         scores = func(model, embeddings, y_batch, attention_mask, **kwargs)
         return [
@@ -146,7 +111,7 @@ def integrated_gradients(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor,
     config: IntGradConfig | None = None,
-    baseline_fn=None,
+    baseline_fn: BaselineFn | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: IntGradConfig())
     baseline_fn = value_or_default(baseline_fn, lambda: zeros_baseline)
@@ -188,7 +153,7 @@ def smooth_grad(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor,
     config: SmoothGradConfing | None = None,
-    explain_fn="IntGrad",
+    explain_fn: ExplainFn | BaselineExplainFn = "IntGrad",
     noise_fn=None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
@@ -229,8 +194,8 @@ def noise_grad(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor,
     config: NoiseGradConfig | None = None,
-    explain_fn="IntGrad",
-    noise_fn=None,
+    explain_fn: ExplainFn | BaselineExplainFn = "IntGrad",
+    noise_fn: ApplyNoiseFn | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: NoiseGradConfig())
     explain_fn = resolve_baseline_explain_fn(explain_fn)
@@ -274,8 +239,8 @@ def noise_grad_plus_plus(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor,
     config: NoiseGradPlusPlusConfig | None = None,
-    explain_fn="IntGrad",
-    noise_fn=None,
+    explain_fn: ExplainFn | BaselineExplainFn = "IntGrad",
+    noise_fn: ApplyNoiseFn | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
     base_explain_fn = resolve_baseline_explain_fn(explain_fn)
@@ -300,77 +265,7 @@ def noise_grad_plus_plus(
     )
 
 
-# ----------------------------------------------------------------------
-
-
-def convert_graph_to_tensor_rt(
-    model: TFPreTrainedModel, fallback_to_saved_model: bool
-) -> GenericFunction:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tf.saved_model.save(model, f"{tmpdir}/saved_model")
-
-        try:
-            converter = trt.TrtGraphConverterV2(
-                input_saved_model_dir=f"{tmpdir}/saved_model", use_dynamic_shape=True
-            )
-            converter.convert()
-            converter.save(f"{tmpdir}/tensor_rt")
-            tensor_rt_func = tf.saved_model.load(f"{tmpdir}/tensor_rt")
-            return tensor_rt_func
-        except RuntimeError as e:
-            if not fallback_to_saved_model:
-                raise e
-            log.error(
-                f"Failed to convert model to TensoRT: {e}, falling back to TF saved model."
-            )
-            return tf.saved_model.load(f"{tmpdir}/saved_model")
-
-
-def build_embeddings_model(
-    hf_model: TFPreTrainedModel, config: ModelConfig | None = None
-) -> tf.keras.Model:
-    inputs = tf.keras.layers.Input(
-        shape=[None, 768], dtype=tf.float32, name="inputs_embeds"
-    )
-    mask_in = tf.keras.layers.Input(shape=[None], dtype=tf.int32, name="attention_mask")
-
-    if config is None:
-        model_family = hf_model.base_model_prefix
-        embeddings_dim = getattr(hf_model, model_family).embeddings.dim
-        num_hidden_layers = getattr(hf_model, model_family).num_hidden_layers
-        config = ModelConfig(model_family, num_hidden_layers, embeddings_dim)
-
-    distilbert_output = getattr(hf_model, config.model_family).transformer(
-        inputs,
-        mask_in,
-        [None] * config.num_hidden_layers,
-        False,
-        False,
-        False,
-    )
-    hidden_state = distilbert_output[0]  # (bs, seq_len, dim)
-    pooled_output = hidden_state[:, 0]  # (bs, dim)
-    pooled_output = hf_model.pre_classifier(pooled_output)  # (bs, dim)
-    pooled_output = hf_model.dropout(pooled_output, training=False)  # (bs, dim)
-    logits = hf_model.classifier(pooled_output)  # (bs, dim)
-
-    new_model = tf.keras.Model(
-        inputs={"inputs_embeds": inputs, "attention_mask": mask_in}, outputs=[logits]
-    )
-    # Build graph
-    new_model(
-        {
-            "inputs_embeds": tf.random.uniform([8, 10, config.embeddings_dim]),
-            "attention_mask": tf.ones([8, 10], dtype=tf.int32),
-        }
-    )
-    return new_model
-
-
-# ---------------------------------------------------------------
-
-
-def resolve_baseline_explain_fn(explain_fn):
+def resolve_baseline_explain_fn(explain_fn: ExplainFn | BaselineExplainFn) -> ExplainFn:
     if isinstance(explain_fn, Callable):
         return explain_fn  # type: ignore
 
@@ -384,13 +279,3 @@ def resolve_baseline_explain_fn(explain_fn):
             f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
         )
     return method_mapping[explain_fn]
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def pseudo_interpolate(x, num_steps):
-    og_shape = tf.convert_to_tensor(tf.shape(x))
-    new_shape = tf.concat([[num_steps + 1], og_shape], axis=0)
-    x = tf.broadcast_to(x, new_shape)
-    flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
-    x = tf.reshape(x, flat_shape)
-    return x

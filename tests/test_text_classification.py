@@ -7,14 +7,18 @@ import tensorflow as tf
 from datasets import load_dataset
 from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 
-from transformers_gradients.config import (
+from transformers_gradients.types import (
     IntGradConfig,
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
     SmoothGradConfing,
 )
-from transformers_gradients.util import is_xla_compatible_platform, get_input_ids
-from transformers_gradients.text_classification import tensor_rt
+from transformers_gradients.util import is_xla_compatible_platform, encode_inputs
+from transformers_gradients.text_classification import tensor_rt, huggingface
+from transformers_gradients.model_utils import (
+    build_embeddings_model,
+    convert_graph_to_tensor_rt,
+)
 
 # @pytest.fixture(scope="session", autouse=True)
 # def profile():
@@ -56,109 +60,112 @@ def sst2_batch():
 @pytest.fixture(scope="session")
 def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     x_batch = sst2_batch[0]
-    input_ids, predict_kwargs = get_input_ids(sst2_tokenizer, x_batch)
+    input_ids, predict_kwargs = encode_inputs(sst2_tokenizer, x_batch)
     x_embeddings = sst2_model.get_input_embeddings()(input_ids)
     return x_embeddings, sst2_batch[1], predict_kwargs
 
 
 @pytest.fixture(scope="session")
 def sst2_saved_model(sst2_model):
-    return tensor_rt.convert_graph_to_tensor_rt(
-        tensor_rt.build_embeddings_model(sst2_model), fallback_to_saved_model=True
+    return convert_graph_to_tensor_rt(
+        build_embeddings_model(sst2_model), fallback_to_saved_model=True
     )
 
 
-# @pytest.mark.parametrize(
-#    "func",
-#    [
-#        gradient_norm,
-#        gradient_x_input,
-#        partial(
-#            integrated_gradients,
-#            config=IntGradConfig(
-#                batch_interpolated_inputs=False,
-#                baseline_fn=lambda x: tf.zeros_like(x, dtype=x.dtype),
-#            ),
-#        ),
-#        pytest.param(
-#            integrated_gradients,
-#            marks=skip_in_ci,
-#        ),
-#        partial(smooth_grad, config=SmoothGradConfing(n=2), explain_fn="GradNorm"),
-#        partial(noise_grad, config=NoiseGradConfig(n=2), explain_fn="GradNorm"),
-#        partial(
-#            noise_grad_plus_plus,
-#            config=NoiseGradPlusPlusConfig(n=2, m=2, explain_fn="GradNorm"),
-#        ),
-#    ],
-#    ids=[
-#        "GradNorm",
-#        "GradXInput",
-#        "IntGrad_iterative",
-#        "IntGrad_batched",
-#        "SmoothGrad",
-#        "NoiseGrad",
-#        "NoiseGrad++",
-#    ],
-# )
-# def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
-#    explanations = func(sst2_model, *sst2_batch, sst2_tokenizer)
-#    assert len(explanations) == 32
-#    for t, s in explanations:
-#        assert isinstance(t, list)
-#        assert [isinstance(i, str) for i in t]
-#        assert isinstance(s, tf.Tensor)
-#        assert not np.isnan(s).any()
+@pytest.mark.parametrize(
+    "func",
+    [
+        huggingface.gradient_norm,
+        huggingface.gradient_x_input,
+        partial(
+            huggingface.integrated_gradients,
+            config=IntGradConfig(
+                batch_interpolated_inputs=False,
+            ),
+        ),
+        pytest.param(
+            huggingface.integrated_gradients,
+            marks=skip_in_ci,
+        ),
+        partial(
+            huggingface.smooth_grad,
+            config=SmoothGradConfing(n=2),
+            explain_fn="GradNorm",
+        ),
+        partial(
+            huggingface.noise_grad, config=NoiseGradConfig(n=2), explain_fn="GradNorm"
+        ),
+        partial(
+            huggingface.noise_grad_plus_plus,
+            config=NoiseGradPlusPlusConfig(n=2, m=2),
+            explain_fn="GradNorm",
+        ),
+    ],
+    ids=[
+        "GradNorm",
+        "GradXInput",
+        "IntGrad_iterative",
+        "IntGrad_batched",
+        "SmoothGrad",
+        "NoiseGrad",
+        "NoiseGrad++",
+    ],
+)
+def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
+    explanations = func(sst2_model, *sst2_batch, tokenizer=sst2_tokenizer)
+    assert len(explanations) == 32
+    for t, s in explanations:
+        assert isinstance(t, list)
+        assert [isinstance(i, str) for i in t]
+        assert isinstance(s, tf.Tensor)
+        assert not np.isnan(s).any()
 
 
-# @pytest.mark.parametrize(
-#    "func",
-#    [
-#        gradient_norm,
-#        gradient_x_input,
-#        partial(
-#            integrated_gradients,
-#            config=IntGradConfig(
-#                batch_interpolated_inputs=False,
-#                baseline_fn=lambda x: tf.zeros_like(x, dtype=x.dtype),
-#            ),
-#        ),
-#        pytest.param(
-#            partial(
-#                integrated_gradients,
-#                config=IntGradConfig(baseline_fn=unk_token_baseline_func()),
-#            ),
-#            marks=skip_in_ci,
-#        ),
-#        partial(smooth_grad, config=SmoothGradConfing(n=2, explain_fn="GradNorm")),
-#        partial(noise_grad, config=NoiseGradConfig(n=2, explain_fn="GradNorm")),
-#        partial(
-#            noise_grad_plus_plus,
-#            config=NoiseGradPlusPlusConfig(n=2, m=2, explain_fn="GradNorm"),
-#        ),
-#    ],
-#    ids=[
-#        "GradNorm",
-#        "GradXInput",
-#        "IntGrad_iterative",
-#        "IntGrad_batched",
-#        "SmoothGrad",
-#        "NoiseGrad",
-#        "NoiseGrad++",
-#    ],
-# )
-# def test_explain_on_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
-#    explanations = func(
-#        sst2_model,
-#        sst2_batch_embeddings[0],
-#        sst2_batch_embeddings[1],
-#        sst2_tokenizer,
-#        **sst2_batch_embeddings[2],
-#    )
-#    assert len(explanations) == 32
-#    for s in explanations:
-#        assert isinstance(s, tf.Tensor)
-#        assert not np.isnan(s).any()
+@pytest.mark.parametrize(
+    "func",
+    [
+        huggingface.gradient_norm,
+        huggingface.gradient_x_input,
+        partial(
+            huggingface.integrated_gradients,
+            config=IntGradConfig(
+                batch_interpolated_inputs=False,
+            ),
+        ),
+        pytest.param(
+            huggingface.integrated_gradients,
+            marks=skip_in_ci,
+        ),
+        partial(
+            huggingface.smooth_grad,
+            config=SmoothGradConfing(n=2),
+            explain_fn="GradNorm",
+        ),
+        partial(
+            huggingface.noise_grad, config=NoiseGradConfig(n=2), explain_fn="GradNorm"
+        ),
+        partial(
+            huggingface.noise_grad_plus_plus,
+            config=NoiseGradPlusPlusConfig(n=2, m=2),
+            explain_fn="GradNorm",
+        ),
+    ],
+    ids=[
+        "GradNorm",
+        "GradXInput",
+        "IntGrad_iterative",
+        "IntGrad_batched",
+        "SmoothGrad",
+        "NoiseGrad",
+        "NoiseGrad++",
+    ],
+)
+def test_explain_on_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
+    explanations = func(sst2_model, *sst2_batch_embeddings, tokenizer=sst2_tokenizer)
+    assert len(explanations) == 32
+    for s in explanations:
+        assert isinstance(s, tf.Tensor)
+        assert not np.isnan(s).any()
 
 
 @pytest.mark.parametrize(
@@ -191,9 +198,7 @@ def sst2_saved_model(sst2_model):
 def test_saved_model_on_embeddings(func, sst2_saved_model, sst2_batch_embeddings):
     explanations = func(
         sst2_saved_model,
-        sst2_batch_embeddings[0],
-        sst2_batch_embeddings[1],
-        **sst2_batch_embeddings[2],
+        *sst2_batch_embeddings,
     )
     assert len(explanations) == 32
     for s in explanations:

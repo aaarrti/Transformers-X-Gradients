@@ -17,7 +17,7 @@ name = "transformers_gradients"  # Required
 #
 # For a discussion on single-sourcing the version, see
 # https://packaging.python.org/guides/single-sourcing-package-version/
-version = "0.0.6"  # Required
+version = "0.0.7"  # Required
 
 # This is a one-line description or tagline of what your project does. This
 # corresponds to the "Summary" metadata field:
@@ -91,9 +91,9 @@ classifiers = [# Optional
 # For an analysis of this field vs pip's requirements files see:
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
-    "tensorflow >= 2.12.0; sys_platform != 'darwin'",
-    "tensorflow_macos >= 2.12.0; sys_platform == 'darwin'",
-    "tensorflow_probability"
+    "tensorflow >= 2.10.0; sys_platform != 'darwin'",
+    "tensorflow_macos >= 2.10.0; sys_platform == 'darwin'",
+    "tensorflow_probability >= 0.18.0"
 ]
 [project.optional-dependencies] # Optional
 transformers = [
