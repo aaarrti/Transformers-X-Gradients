@@ -34,3 +34,56 @@ def as_tensor(arr) -> tf.Tensor:
         return arr
     else:
         return tf.convert_to_tensor(arr)
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
+    # Matrix with indexes like [ [0,y_0], [1, y_1], ...]
+    indexes = tf.transpose(
+        tf.stack(
+            [
+                tf.range(tf.shape(logits)[0], dtype=tf.int32),
+                tf.cast(y_batch, tf.int32),
+            ]
+        ),
+        [1, 0],
+    )
+    return tf.gather_nd(logits, indexes)
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def bounding_shape(arr):
+    return tf.constant([tf.shape(arr)[0], tf.shape(arr)[1]])
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def zeros_baseline(arr):
+    return tf.zeros_like(arr)
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def _interpolate_inputs(
+    baseline: tf.Tensor, target: tf.Tensor, num_steps: int
+) -> tf.Tensor:
+    """Gets num_step linearly interpolated inputs from baseline to target."""
+    delta = target - baseline
+    scales = tf.linspace(0, 1, num_steps + 1)[:, tf.newaxis, tf.newaxis]
+    scales = tf.cast(scales, dtype=delta.dtype)
+    shape = tf.convert_to_tensor(
+        [num_steps + 1, tf.shape(delta)[0], tf.shape(delta)[1]]
+    )
+    deltas = scales * tf.broadcast_to(delta, shape)
+    interpolated_inputs = baseline + deltas
+    return interpolated_inputs
+
+
+def interpolate_inputs(x_batch, num_steps, baseline_fn):
+    return tf.map_fn(
+        lambda i: _interpolate_inputs(baseline_fn(i), i, tf.constant(num_steps)),
+        x_batch,
+    )
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def multiplicative_noise(arr, noise):
+    return tf.multiply(arr, noise)

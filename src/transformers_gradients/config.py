@@ -1,9 +1,6 @@
-from typing import NamedTuple, Union, Callable
+from typing import NamedTuple
+
 import tensorflow as tf
-
-
-from transformers_gradients.types import BaselineFn, ExplainFn, ApplyNoiseFn
-from transformers_gradients.util import is_xla_compatible_platform
 
 
 class LibConfig(NamedTuple):
@@ -11,7 +8,13 @@ class LibConfig(NamedTuple):
     log_level: str = "INFO"
 
 
-class IntGradConfig(NamedTuple):
+class ModelConfig(tf.experimental.ExtensionType):
+    model_family: str
+    num_hidden_layers: int
+    embeddings_dim: int
+
+
+class IntGradConfig(tf.experimental.ExtensionType):
     """
     num_steps:
         Number of interpolated samples, which should be generated, default=10.
@@ -24,13 +27,10 @@ class IntGradConfig(NamedTuple):
     """
 
     num_steps: int = 10
-    baseline_fn: BaselineFn = tf.function(
-        reduce_retracing=True, jit_compile=is_xla_compatible_platform()
-    )(lambda x: tf.zeros_like(x, dtype=x.dtype))
     batch_interpolated_inputs: bool = True
 
 
-class NoiseGradConfig(NamedTuple):
+class NoiseGradConfig(tf.experimental.ExtensionType):
     """
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
@@ -50,13 +50,9 @@ class NoiseGradConfig(NamedTuple):
     n: int = 10
     mean: float = 1.0
     std: float = 0.0055
-    explain_fn: Union[ExplainFn, str] = "IntGrad"
-    noise_fn: ApplyNoiseFn = tf.function(
-        reduce_retracing=True, jit_compile=is_xla_compatible_platform()
-    )(lambda a, b: a * b)
 
 
-class SmoothGradConfing(NamedTuple):
+class SmoothGradConfing(tf.experimental.ExtensionType):
     """
     mean:
         Mean of normal distribution, from which noise applied to input embeddings is sampled, default=0.0.
@@ -76,13 +72,9 @@ class SmoothGradConfing(NamedTuple):
     n: int = 10
     mean: float = 1.0
     std: float = 0.0055
-    explain_fn: Union[ExplainFn, str] = "IntGrad"
-    noise_fn: ApplyNoiseFn = tf.function(
-        reduce_retracing=True, jit_compile=is_xla_compatible_platform()
-    )(lambda a, b: a * b)
 
 
-class NoiseGradPlusPlusConfig(NamedTuple):
+class NoiseGradPlusPlusConfig(tf.experimental.ExtensionType):
     """
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
@@ -112,34 +104,8 @@ class NoiseGradPlusPlusConfig(NamedTuple):
     sg_mean: float = 0.0
     std: float = 0.0055
     sg_std: float = 0.05
-    explain_fn: Union[ExplainFn, str] = "IntGrad"
-    noise_fn: ApplyNoiseFn = tf.function(
-        reduce_retracing=True, jit_compile=is_xla_compatible_platform()
-    )(lambda a, b: a * b)
 
 
 def update_config(**kwargs):
     config = LibConfig()
     tf.random.set_seed(config.seed)
-
-
-def resolve_baseline_explain_fn(explain_fn):
-    if isinstance(explain_fn, Callable):
-        return explain_fn  # type: ignore
-
-    from transformers_gradients.text_classification.explanation_func import (
-        integrated_gradients,
-        gradient_norm,
-        gradient_x_input,
-    )
-
-    method_mapping = {
-        "IntGrad": integrated_gradients,
-        "GradNorm": gradient_norm,
-        "GradXInput": gradient_x_input,
-    }
-    if explain_fn not in method_mapping:
-        raise ValueError(
-            f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
-        )
-    return method_mapping[explain_fn]

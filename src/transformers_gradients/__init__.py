@@ -11,6 +11,5 @@ from transformers_gradients.types import (
     ExplainFn,
     ApplyNoiseFn,
 )
-from transformers_gradients.text_classification import explanation_func
 
 update_config()

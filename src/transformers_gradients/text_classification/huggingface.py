@@ -3,7 +3,7 @@ from __future__ import annotations
 import gc
 from functools import wraps, partial
 from operator import itemgetter
-from typing import List
+from typing import List, Callable
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -15,13 +15,16 @@ from transformers_gradients.config import (
     NoiseGradPlusPlusConfig,
     NoiseGradConfig,
     SmoothGradConfing,
-    resolve_baseline_explain_fn,
 )
 from transformers_gradients.util import (
     value_or_default,
     is_xla_compatible_platform,
     get_input_ids,
     as_tensor,
+    logits_for_labels,
+    interpolate_inputs,
+    zeros_baseline,
+    multiplicative_noise,
 )
 
 
@@ -151,6 +154,7 @@ def integrated_gradients(
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: IntGradConfig | None = None,
+    baseline_fn=None,
     **kwargs,
 ) -> tf.Tensor:
     """
@@ -199,11 +203,8 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    interpolated_embeddings = tf.map_fn(
-        lambda i: interpolate_inputs(
-            config.baseline_fn(i), i, tf.constant(config.num_steps)
-        ),
-        x_batch,
+    interpolated_embeddings = interpolate_inputs(
+        x_batch, config.num_steps, value_or_default(baseline_fn, lambda: zeros_baseline)
     )
     kwargs = tf.nest.map_structure(as_tensor, kwargs)
 
@@ -230,10 +231,13 @@ def smooth_grad(
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: SmoothGradConfing | None = None,
+    explain_fn="IntGrad",
+    noise_fn=None,
     **kwargs,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
-    explain_fn = resolve_baseline_explain_fn(config.explain_fn)
+    explain_fn = resolve_baseline_explain_fn(explain_fn)
+    apply_noise_fn = value_or_default(noise_fn, lambda: multiplicative_noise)
 
     explanations_array = tf.TensorArray(
         x_batch.dtype,
@@ -246,7 +250,7 @@ def smooth_grad(
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
-        return config.noise_fn(x, noise)
+        return apply_noise_fn(x, noise)
 
     for n in tf.range(config.n):
         noisy_x = noise_fn(x_batch)
@@ -264,6 +268,8 @@ def noise_grad(
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: NoiseGradConfig | None = None,
+    explain_fn="IntGrad",
+    noise_fn=None,
     **kwargs,
 ) -> tf.Tensor:
     """
@@ -308,7 +314,8 @@ def noise_grad(
     """
 
     config = value_or_default(config, lambda: NoiseGradConfig())
-    explain_fn = resolve_baseline_explain_fn(config.explain_fn)
+    explain_fn = resolve_baseline_explain_fn(explain_fn)
+    apply_noise_fn = value_or_default(noise_fn, lambda: multiplicative_noise)
     original_weights = model.weights.copy()
 
     explanations_array = tf.TensorArray(
@@ -322,7 +329,7 @@ def noise_grad(
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
-        return config.noise_fn(x, noise)
+        return apply_noise_fn(x, noise)
 
     for n in tf.range(config.n):
         noisy_weights = tf.nest.map_structure(
@@ -348,6 +355,8 @@ def noise_grad_plus_plus(
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     config: NoiseGradPlusPlusConfig | None = None,
+    explain_fn="IntGrad",
+    noise_fn=None,
     **kwargs,
 ) -> tf.Tensor:
     """
@@ -497,32 +506,17 @@ def _integrated_gradients_iterative(
 # --------------------- utils ----------------------
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
-    # Matrix with indexes like [ [0,y_0], [1, y_1], ...]
-    indexes = tf.transpose(
-        tf.stack(
-            [
-                tf.range(tf.shape(logits)[0], dtype=tf.int32),
-                tf.cast(y_batch, tf.int32),
-            ]
-        ),
-        [1, 0],
-    )
-    return tf.gather_nd(logits, indexes)
+def resolve_baseline_explain_fn(explain_fn):
+    if isinstance(explain_fn, Callable):
+        return explain_fn  # type: ignore
 
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def interpolate_inputs(
-    baseline: tf.Tensor, target: tf.Tensor, num_steps: int
-) -> tf.Tensor:
-    """Gets num_step linearly interpolated inputs from baseline to target."""
-    delta = target - baseline
-    scales = tf.linspace(0, 1, num_steps + 1)[:, tf.newaxis, tf.newaxis]
-    scales = tf.cast(scales, dtype=delta.dtype)
-    shape = tf.convert_to_tensor(
-        [num_steps + 1, tf.shape(delta)[0], tf.shape(delta)[1]]
-    )
-    deltas = scales * tf.broadcast_to(delta, shape)
-    interpolated_inputs = baseline + deltas
-    return interpolated_inputs
+    method_mapping = {
+        "IntGrad": integrated_gradients,
+        "GradNorm": gradient_norm,
+        "GradXInput": gradient_x_input,
+    }
+    if explain_fn not in method_mapping:
+        raise ValueError(
+            f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
+        )
+    return method_mapping[explain_fn]
