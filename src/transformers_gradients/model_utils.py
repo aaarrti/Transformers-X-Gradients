@@ -3,17 +3,16 @@ import tempfile
 
 import tensorflow as tf
 from tensorflow.python.compiler.tensorrt import trt_convert as trt
-from tensorflow.python.types.core import GenericFunction
 from transformers import TFPreTrainedModel
 
-from transformers_gradients.types import ModelConfig
+from transformers_gradients.types import ModelConfig, UserObject
 
 log = logging.getLogger(__name__)
 
 
 def convert_graph_to_tensor_rt(
     model: TFPreTrainedModel, fallback_to_saved_model: bool = False
-) -> GenericFunction:
+) -> UserObject:
     with tempfile.TemporaryDirectory() as tmpdir:
         tf.saved_model.save(model, f"{tmpdir}/saved_model")
 
