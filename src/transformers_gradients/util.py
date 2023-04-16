@@ -7,6 +7,8 @@ from typing import TypeVar, Callable, Dict, List, Tuple
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
 
+from transformers_gradients.functions import bounding_shape
+
 T = TypeVar("T")
 
 
