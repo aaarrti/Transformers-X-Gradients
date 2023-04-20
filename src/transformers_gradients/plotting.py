@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from transformers_gradients.types import Explanation
-from transformers_gradients.util import value_or_default
+from transformers_gradients.utils.util import value_or_default
 
 DEFAULT_SPECIAL_TOKENS = [
     "[CLS]",
@@ -43,12 +42,12 @@ class ColorMapper:
         return red, green, blue
 
 
-def _create_div(
+def create_div(
     explanation: Explanation,
     label: str,
     ignore_special_tokens: bool,
     special_tokens: List[str],
-):
+) -> str:
     # Create a container, which inherits root styles.
     div_template = """
         <div class="container">
@@ -161,80 +160,6 @@ def visualise_explanations_as_html(
     # For each token, create a separate div holding whole input sequence on 1 line.
     for i, explanation in enumerate(explanations):
         label = labels[i] if labels is not None else ""
-        div = _create_div(explanation, label, ignore_special_tokens, special_tokens)
+        div = create_div(explanation, label, ignore_special_tokens, special_tokens)
         spans += div
     return heatmap_template.replace("{{body}}", spans)
-
-
-def _value_at_index_or_default(values, index, default):
-    if len(values) > index:
-        return values[index]
-    else:
-        return default
-
-
-def visualise_explanations_as_pyplot(
-    explanations: List[Explanation],
-    labels: Optional[List[str]] = None,
-    v_len_scale=0.75,
-    h_len_scale=1.25,
-):
-    """
-    Plots attributions over a batch of text sequence explanations. This function should be preferred is you need your
-    heatmaps to be correctly displayed in GitHubs preview. For longer inputs (over 15-20) tokens, the cells become
-    smaller, and it could be hard for viewer to see the actual tokens.
-
-    References:
-        - https://stackoverflow.com/questions/74046734/plot-text-saliency-map-in-jupyter-notebook
-
-    Parameters
-    ----------
-    explanations:
-        List of tuples (tokens, salience) containing batch of explanations.
-    labels:
-        Optional labels to display above each row.
-
-    Returns
-    -------
-    plot: matplotplib.pyplot.figure object, which will be automatically rendered by jupyter.
-    """
-
-    h_len = len(explanations)
-    v_len = len(explanations[0][0])
-
-    tokens = [i[0] for i in explanations]
-    scores = [i[1] for i in explanations]
-
-    fig, axes = plt.subplots(
-        h_len,
-        v_len,
-        figsize=(v_len * v_len_scale, h_len * h_len_scale),
-        gridspec_kw=dict(left=0.0, right=1.0),
-    )
-    hspace = 1.0 if labels is not None else 0.1
-    plt.subplots_adjust(hspace=hspace, wspace=0.0)
-    for i, ax in enumerate(axes):
-        color_mapper = ColorMapper(np.max(scores[i]), np.min(scores[i]))
-        if labels:
-            ax[v_len // 2].set_title(labels[i])
-
-        scores_row = scores[i]
-        tokens_row = tokens[i]
-        for j in range(v_len):
-            score = _value_at_index_or_default(scores_row, j, 0.0)
-            token = _value_at_index_or_default(tokens_row, j, "")
-            color = color_mapper.to_rgb(score, normalize_to_1=True)
-            rect = plt.Rectangle((0, 0), 1, 1, color=color)
-            ax[j].add_patch(rect)
-            ax[j].text(0.5, 0.5, token, ha="center", va="center")
-            ax[j].set_xlim(0, 1)
-            ax[j].set_ylim(0, 1)
-            ax[j].axis("off")
-            ax[j] = fig.add_axes([0, 0.05, 1, 0.9], fc=[0, 0, 0, 0])
-
-    ax = axes.ravel()[-1]
-    for axis in ["left", "right"]:
-        ax.spines[axis].set_visible(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    plt.show()

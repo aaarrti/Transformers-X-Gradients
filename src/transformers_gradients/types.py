@@ -19,6 +19,8 @@ BaselineFn = Callable[[tf.Tensor], tf.Tensor]
 Explanation = Tuple[List[str], tf.Tensor]
 ApplyNoiseFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
 BaselineExplainFn = Literal["GradNorm", "GradXInput", "IntGrad"]
+DistanceFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
+KernelFn = Callable[[tf.Tensor], tf.Tensor]
 
 
 @runtime_checkable
@@ -184,3 +186,4 @@ class LimeConfig(tf.experimental.ExtensionType):
     num_samples: int = 1000
     mask_token: str = "[UNK]"
     distance_scale: float = 100.0
+    batch_size: int = 256

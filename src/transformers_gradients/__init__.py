@@ -4,13 +4,15 @@ from transformers_gradients.types import (
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
     LibConfig,
-)
-from transformers_gradients.types import (
+    LimeConfig,
     BaselineFn,
     Explanation,
     ExplainFn,
     ApplyNoiseFn,
 )
+
+from transformers_gradients.tasks import text_classification
+from transformers_gradients.plotting import visualise_explanations_as_html
 
 
 def update_config(**kwargs):

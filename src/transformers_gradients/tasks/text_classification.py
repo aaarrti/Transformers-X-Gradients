@@ -5,7 +5,6 @@ from typing import List, Callable
 
 import tensorflow as tf
 import tensorflow_probability as tfp
-from tensorflow_probability.python.distributions.normal import Normal
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 from transformers_gradients.functions import (
@@ -16,6 +15,7 @@ from transformers_gradients.functions import (
     pseudo_interpolate,
     broadcast_expand_dims,
 )
+from transformers_gradients.lime.lime import lime as base_lime
 from transformers_gradients.types import (
     IntGradConfig,
     NoiseGradPlusPlusConfig,
@@ -25,8 +25,12 @@ from transformers_gradients.types import (
     BaselineExplainFn,
     ExplainFn,
     ApplyNoiseFn,
+    LimeConfig,
+    Explanation,
+    DistanceFn,
+    KernelFn,
 )
-from transformers_gradients.util import (
+from transformers_gradients.utils.util import (
     value_or_default,
     encode_inputs,
     as_tensor,
@@ -250,7 +254,7 @@ def smooth_grad(
         colocate_with_first_write_call=True,
     )
 
-    noise_dist = Normal(config.mean, config.std)
+    noise_dist = tfp.distributions.Normal(config.mean, config.std)
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
@@ -325,7 +329,7 @@ def noise_grad(
         colocate_with_first_write_call=True,
     )
 
-    noise_dist = Normal(config.mean, config.std)
+    noise_dist = tfp.distributions.Normal(config.mean, config.std)
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
@@ -489,6 +493,48 @@ def _integrated_gradients_iterative(
     scores_stack = scores.stack()
     scores.close()
     return scores_stack
+
+
+def lime(
+    model: TFPreTrainedModel,
+    x_batch: List[str],
+    y_batch: tf.Tensor,
+    tokenizer: PreTrainedTokenizerBase,
+    config: LimeConfig = LimeConfig(),
+    distance_fn: DistanceFn = tf.keras.losses.cosine_similarity,
+    kernel: KernelFn = None,
+) -> List[Explanation]:
+    def predict_fn(x):
+        return model.predict(x, verbose=0, batch_size=config.batch_size).logits
+
+    input_ids = tf.TensorArray(
+        tf.int32,
+        size=len(x_batch),
+        colocate_with_first_write_call=True,
+    )
+
+    for i, x in enumerate(x_batch):
+        input_ids = input_ids.write(i, tokenizer(x, return_tensors="tf")["input_ids"])
+
+    scores = base_lime(
+        predict_fn=predict_fn,
+        x_batch=input_ids,
+        y_batch=y_batch,
+        distance_fn=distance_fn,
+        kernel=kernel,
+        distance_scale=config.distance_scale,
+        mask_token_id=tokenizer(config.mask_token)[0],
+        num_samples=config.num_samples,
+    )
+
+    a_batch = [
+        (tokenizer.convert_ids_to_tokens(input_ids.read(i)), scores.read(i))
+        for i in range(len(x_batch))
+    ]
+
+    input_ids.close()
+    scores.close()
+    return a_batch
 
 
 # --------------------- utils ----------------------

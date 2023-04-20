@@ -7,7 +7,6 @@ from typing import TypeVar, Callable, Dict, List, Tuple
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
 
-from transformers_gradients.functions import bounding_shape
 
 T = TypeVar("T")
 
@@ -40,6 +39,8 @@ def as_tensor(arr) -> tf.Tensor:
 
 
 def tensor_inputs(func):
+    from transformers_gradients.functions import bounding_shape
+
     @wraps(func)
     def wrapper(
         model: UserObject,
