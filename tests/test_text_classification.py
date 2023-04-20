@@ -14,7 +14,7 @@ from transformers_gradients import (
     LimeConfig,
     text_classification,
 )
-from transformers_gradients.utils.util import encode_inputs
+from transformers_gradients.utils import encode_inputs
 
 
 from tests.markers import skip_in_ci
@@ -51,6 +51,9 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     input_ids, predict_kwargs = encode_inputs(sst2_tokenizer, x_batch)
     x_embeddings = sst2_model.get_input_embeddings()(input_ids)
     return x_embeddings, sst2_batch[1], predict_kwargs
+
+
+# -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -91,7 +94,7 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
         "NoiseGrad++",
     ],
 )
-def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
+def test_plain_text(func, sst2_model, sst2_batch, sst2_tokenizer):
     explanations = func(sst2_model, *sst2_batch, tokenizer=sst2_tokenizer)
     assert len(explanations) == BATCH_SIZE
     for t, s in explanations:
@@ -139,7 +142,7 @@ def test_explain_on_text(func, sst2_model, sst2_batch, sst2_tokenizer):
         "NoiseGrad++",
     ],
 )
-def test_explain_on_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
+def test_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
     explanations = func(sst2_model, *sst2_batch_embeddings, tokenizer=sst2_tokenizer)
     assert len(explanations) == BATCH_SIZE
     for s in explanations:
@@ -147,7 +150,7 @@ def test_explain_on_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tok
         assert not np.isnan(s).any()
 
 
-def test_lime_huggingface_model(sst2_model, sst2_batch, sst2_tokenizer):
+def test_lime(sst2_model, sst2_batch, sst2_tokenizer):
     explanations = text_classification.lime(
         sst2_model,
         *sst2_batch,

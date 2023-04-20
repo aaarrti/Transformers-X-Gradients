@@ -13,10 +13,12 @@ R = TypeVar("R")
 
 
 def encode_inputs(
-    tokenizer: PreTrainedTokenizerBase, x_batch: List[str]
+    tokenizer: PreTrainedTokenizerBase, x_batch: List[str], **kwargs
 ) -> Tuple[tf.Tensor, tf.Tensor | None]:
     """Do batch encode, unpack input ids and other forward-pass kwargs."""
-    encoded_input = tokenizer(x_batch, padding="longest", return_tensors="tf").data
+    encoded_input = tokenizer(
+        x_batch, padding="longest", return_tensors="tf", **kwargs
+    ).data
     return encoded_input.pop("input_ids"), encoded_input.get("attention_mask")
 
 

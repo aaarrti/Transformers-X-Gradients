@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from transformers_gradients.types import BaselineFn
-from transformers_gradients.utils.util import is_xla_compatible_platform
+from transformers_gradients.utils import is_xla_compatible_platform
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())

@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from transformers_gradients.types import Explanation
-from transformers_gradients.utils.util import value_or_default
+from transformers_gradients.utils import value_or_default
 
 DEFAULT_SPECIAL_TOKENS = [
     "[CLS]",

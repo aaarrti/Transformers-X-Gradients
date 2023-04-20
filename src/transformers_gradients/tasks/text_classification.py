@@ -29,7 +29,7 @@ from transformers_gradients.types import (
     LimeConfig,
     Explanation,
 )
-from transformers_gradients.utils.util import (
+from transformers_gradients.utils import (
     value_or_default,
     encode_inputs,
     as_tensor,
@@ -279,7 +279,6 @@ def smooth_grad(
         x_batch.dtype,
         size=config.n,
         clear_after_read=True,
-        colocate_with_first_write_call=True,
     )
 
     noise_dist = tfp.distributions.Normal(config.mean, config.std)
@@ -354,7 +353,6 @@ def noise_grad(
         x_batch.dtype,
         size=config.n,
         clear_after_read=True,
-        colocate_with_first_write_call=True,
     )
 
     noise_dist = tfp.distributions.Normal(config.mean, config.std)
@@ -489,7 +487,6 @@ def _integrated_gradients_iterative(
         x_batch.dtype,
         size=batch_size,
         clear_after_read=True,
-        colocate_with_first_write_call=True,
     )
 
     for i in tf.range(batch_size):
@@ -548,31 +545,17 @@ def lime(
     """
     config = value_or_default(config, lambda: LimeConfig())
     distance_scale = tf.constant(config.distance_scale)
-    mask_token_id = tokenizer(config.mask_token, return_tensors="tf")[0]
+    mask_token_id = tokenizer.convert_tokens_to_ids(config.mask_token)
     distance_fn = value_or_default(
         config.distance_fn, lambda: tf.keras.losses.cosine_similarity
     )
     kernel = value_or_default(config.kernel_fn, lambda: exponential_kernel)
 
     num_samples = tf.constant(config.num_samples)
-
-    input_ids = tf.TensorArray(
-        tf.int32,
-        size=len(x_batch),
-        colocate_with_first_write_call=True,
-    )
-
-    for i, x in enumerate(x_batch):
-        input_ids = input_ids.write(i, tokenizer(x, return_tensors="tf")["input_ids"])
-
-    scores = tf.TensorArray(
-        tf.float32,
-        size=config.num_samples,
-        colocate_with_first_write_call=True,
-    )
+    a_batch = []
 
     for i, y in enumerate(y_batch):
-        ids = input_ids.read(i)
+        ids = tokenizer(x_batch[i], return_tensors="tf")["input_ids"][0]
         masks = sample_masks(num_samples - 1, len(ids), seed=42)
         if masks.shape[0] != num_samples - 1:
             raise ValueError("Expected num_samples + 1 masks.")
@@ -581,7 +564,7 @@ def lime(
         masks = tf.concat([tf.expand_dims(all_true_mask, 0), masks], axis=0)
 
         perturbations = mask_tokens(ids, masks, mask_token_id)
-        logits = model.predict(perturbations, verbose=0, batch_size=config.batch_size)
+        logits = model(perturbations).logits
         outputs = logits[:, y]
         distances = distance_fn(
             tf.cast(all_true_mask, dtype=tf.float32), tf.cast(masks, dtype=tf.float32)
@@ -589,13 +572,6 @@ def lime(
         distances = distance_scale * distances
         distances = kernel(distances)
         score = ridge_regression(masks, outputs, sample_weight=distances)
-        scores = scores.write(i, score)
+        a_batch.append((tokenizer.convert_ids_to_tokens(ids), score))
 
-    a_batch = [
-        (tokenizer.convert_ids_to_tokens(input_ids.read(i)), scores.read(i))
-        for i in range(len(x_batch))
-    ]
-
-    input_ids.close()
-    scores.close()
     return a_batch
