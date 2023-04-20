@@ -9,6 +9,7 @@ from typing import (
     List,
     Literal,
     NamedTuple,
+    Union,
 )
 
 import tensorflow as tf
@@ -17,7 +18,9 @@ from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 BaselineFn = Callable[[tf.Tensor], tf.Tensor]
 Explanation = Tuple[List[str], tf.Tensor]
-ApplyNoiseFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
+ApplyNoiseFn = Union[
+    Callable[[tf.Tensor, tf.Tensor], tf.Tensor], Literal["additive", "multiplicative"]
+]
 BaselineExplainFn = Literal["GradNorm", "GradXInput", "IntGrad"]
 DistanceFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
 KernelFn = Callable[[tf.Tensor], tf.Tensor]
@@ -76,19 +79,21 @@ class ExplainFn(Protocol):
         ...
 
 
+@runtime_checkable
+class ExplanationModule(Protocol):
+    gradient_norm: ExplainFn
+    gradient_x_input: ExplainFn
+    integrated_gradients: ExplainFn
+
+
 class LibConfig(NamedTuple):
     prng_seed: int = 42
     log_level: str = "INFO"
     log_format: str = "%(asctime)s:[%(filename)s:%(lineno)s->%(funcName)s()]:%(levelname)s: %(message)s"
+    return_raw_scores: bool = False
 
 
-class ModelConfig(tf.experimental.ExtensionType):
-    model_family: str
-    num_hidden_layers: int
-    embeddings_dim: int
-
-
-class IntGradConfig(tf.experimental.ExtensionType):
+class IntGradConfig(NamedTuple):
     """
     num_steps:
         Number of interpolated samples, which should be generated, default=10.
@@ -102,9 +107,10 @@ class IntGradConfig(tf.experimental.ExtensionType):
 
     num_steps: int = 10
     batch_interpolated_inputs: bool = True
+    baseline_fn: BaselineFn | None = None
 
 
-class NoiseGradConfig(tf.experimental.ExtensionType):
+class NoiseGradConfig(NamedTuple):
     """
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
@@ -124,9 +130,11 @@ class NoiseGradConfig(tf.experimental.ExtensionType):
     n: int = 10
     mean: float = 1.0
     std: float = 0.0055
+    explain_fn: BaselineExplainFn | ExplainFn = "IntGrad"
+    noise_fn: ApplyNoiseFn = "multiplicative"
 
 
-class SmoothGradConfing(tf.experimental.ExtensionType):
+class SmoothGradConfing(NamedTuple):
     """
     mean:
         Mean of normal distribution, from which noise applied to input embeddings is sampled, default=0.0.
@@ -146,9 +154,11 @@ class SmoothGradConfing(tf.experimental.ExtensionType):
     n: int = 10
     mean: float = 1.0
     std: float = 0.0055
+    explain_fn: BaselineExplainFn | ExplainFn = "IntGrad"
+    noise_fn: ApplyNoiseFn = "multiplicative"
 
 
-class NoiseGradPlusPlusConfig(tf.experimental.ExtensionType):
+class NoiseGradPlusPlusConfig(NamedTuple):
     """
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
@@ -178,12 +188,15 @@ class NoiseGradPlusPlusConfig(tf.experimental.ExtensionType):
     sg_mean: float = 0.0
     std: float = 0.0055
     sg_std: float = 0.05
+    explain_fn: BaselineExplainFn | ExplainFn = "IntGrad"
+    noise_fn: ApplyNoiseFn = "multiplicative"
 
 
-class LimeConfig(tf.experimental.ExtensionType):
+class LimeConfig(NamedTuple):
     alpha: float = 1.0
-    solver: str = "cholesky"
     num_samples: int = 1000
     mask_token: str = "[UNK]"
     distance_scale: float = 100.0
     batch_size: int = 256
+    distance_fn: DistanceFn | None = None
+    kernel_fn: KernelFn | None = None

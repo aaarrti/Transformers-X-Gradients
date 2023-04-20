@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import platform
-from functools import wraps
-from typing import TypeVar, Callable, Dict, List, Tuple
+from typing import TypeVar, Callable, List, Tuple
 
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
 
+from transformers_gradients.types import ExplanationModule, ExplainFn, ApplyNoiseFn
 
 T = TypeVar("T")
+R = TypeVar("R")
 
 
 def encode_inputs(
@@ -26,6 +27,13 @@ def value_or_default(value: T | None, default_factory: Callable[[], T]) -> T:
         return default_factory()
 
 
+def map_optional(val: T | None, func: Callable[[T], R]) -> R | None:
+    """Apply func to value if not None, otherwise return None."""
+    if val is None:
+        return None
+    return func(val)
+
+
 def is_xla_compatible_platform() -> bool:
     """Determine if host is xla-compatible."""
     return not (platform.system() == "Darwin" and "arm" in platform.processor().lower())
@@ -38,23 +46,35 @@ def as_tensor(arr) -> tf.Tensor:
         return tf.convert_to_tensor(arr)
 
 
-def tensor_inputs(func):
-    from transformers_gradients.functions import bounding_shape
+def resolve_baseline_explain_fn(
+    module: ExplanationModule, explain_fn: str | ExplainFn
+) -> ExplainFn:
+    if isinstance(explain_fn, Callable):
+        return explain_fn  # type: ignore
 
-    @wraps(func)
-    def wrapper(
-        model: UserObject,
-        x_batch: tf.Tensor,
-        y_batch: tf.Tensor,
-        attention_mask: tf.Tensor | None = None,
-        **kwargs,
-    ):
-        x_batch = as_tensor(x_batch)
-        y_batch = as_tensor(y_batch)
-        attention_mask = value_or_default(
-            attention_mask, lambda: tf.ones(bounding_shape(x_batch), dtype=tf.int32)
+    method_mapping = {
+        "IntGrad": module.integrated_gradients,
+        "GradNorm": module.gradient_norm,
+        "GradXInput": module.gradient_x_input,
+    }
+    if explain_fn not in method_mapping:
+        raise ValueError(
+            f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
         )
-        attention_mask = as_tensor(attention_mask)
-        return func(model, x_batch, y_batch, attention_mask, **kwargs)
+    return method_mapping[explain_fn]
 
-    return wrapper
+
+def resolve_noise_fn(noise_fn: str | ApplyNoiseFn) -> ApplyNoiseFn:
+    if isinstance(noise_fn, Callable):
+        return noise_fn
+
+    from transformers_gradients.functions import additive_noise, multiplicative_noise
+
+    if noise_fn == "multiplicative":
+        return multiplicative_noise
+    if noise_fn == "additive":
+        return additive_noise
+
+    raise ValueError(
+        f"Unknown noise_fn: {noise_fn}, suported are additive, multiplicative"
+    )

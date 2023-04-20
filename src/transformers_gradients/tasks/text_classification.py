@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from functools import wraps, partial
-from typing import List, Callable
+from typing import List
+import sys
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
+from transformers_gradients import get_config
 from transformers_gradients.functions import (
     logits_for_labels,
     interpolate_inputs,
@@ -14,31 +16,54 @@ from transformers_gradients.functions import (
     multiplicative_noise,
     pseudo_interpolate,
     broadcast_expand_dims,
+    sample_masks,
+    mask_tokens,
+    ridge_regression,
+    exponential_kernel,
 )
-from transformers_gradients.lime.lime import lime as base_lime
 from transformers_gradients.types import (
     IntGradConfig,
     NoiseGradPlusPlusConfig,
     NoiseGradConfig,
     SmoothGradConfing,
-    BaselineFn,
-    BaselineExplainFn,
-    ExplainFn,
-    ApplyNoiseFn,
     LimeConfig,
     Explanation,
-    DistanceFn,
-    KernelFn,
 )
 from transformers_gradients.utils.util import (
     value_or_default,
     encode_inputs,
     as_tensor,
-    tensor_inputs,
+    resolve_baseline_explain_fn,
+    resolve_noise_fn,
 )
 
 
-def plain_text_hook(func):
+# ----------------------------------------------------------------------------
+
+
+def tensor_inputs(func):
+    from transformers_gradients.functions import bounding_shape
+
+    @wraps(func)
+    def wrapper(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        attention_mask: tf.Tensor | None = None,
+        **kwargs,
+    ):
+        x_batch = as_tensor(x_batch)
+        y_batch = as_tensor(y_batch)
+        attention_mask = value_or_default(
+            attention_mask, lambda: tf.ones(bounding_shape(x_batch), dtype=tf.int32)
+        )
+        attention_mask = as_tensor(attention_mask)
+        return func(model, x_batch, y_batch, attention_mask, **kwargs)
+
+    return wrapper
+
+
+def plain_text_inputs(func):
     @wraps(func)
     def wrapper(
         model: TFPreTrainedModel,
@@ -56,6 +81,8 @@ def plain_text_hook(func):
         input_ids, attention_mask = encode_inputs(tokenizer, x_batch)
         embeddings = model.get_input_embeddings()(input_ids)
         scores = func(model, embeddings, as_tensor(y_batch), attention_mask, **kwargs)
+        if get_config().return_raw_scores:
+            return scores
         return [
             (tokenizer.convert_ids_to_tokens(list(i)), j)
             for i, j in zip(input_ids, scores)
@@ -64,7 +91,10 @@ def plain_text_hook(func):
     return wrapper
 
 
-@plain_text_hook
+# ----------------------------------------------------------------------------
+
+
+@plain_text_inputs
 @tensor_inputs
 def gradient_norm(
     model: TFPreTrainedModel,
@@ -112,7 +142,7 @@ def gradient_norm(
     return tf.linalg.norm(grads, axis=-1)
 
 
-@plain_text_hook
+@plain_text_inputs
 @tensor_inputs
 def gradient_x_input(
     model: TFPreTrainedModel,
@@ -160,7 +190,7 @@ def gradient_x_input(
     return tf.math.reduce_sum(x_batch * grads, axis=-1)
 
 
-@plain_text_hook
+@plain_text_inputs
 @tensor_inputs
 def integrated_gradients(
     model: TFPreTrainedModel,
@@ -168,7 +198,6 @@ def integrated_gradients(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     config: IntGradConfig | None = None,
-    baseline_fn: BaselineFn | None = None,
 ) -> tf.Tensor:
     """
     A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:
@@ -212,7 +241,7 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    baseline_fn = value_or_default(baseline_fn, lambda: zeros_baseline)
+    baseline_fn = value_or_default(config.baseline_fn, lambda: zeros_baseline)
     interpolated_embeddings = interpolate_inputs(x_batch, config.num_steps, baseline_fn)
 
     if config.batch_interpolated_inputs:
@@ -232,7 +261,7 @@ def integrated_gradients(
         )
 
 
-@plain_text_hook
+@plain_text_inputs
 @tensor_inputs
 def smooth_grad(
     model: TFPreTrainedModel,
@@ -240,12 +269,11 @@ def smooth_grad(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     config: SmoothGradConfing | None = None,
-    explain_fn: ExplainFn | BaselineExplainFn = "IntGrad",
-    noise_fn: ApplyNoiseFn | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
-    explain_fn = resolve_baseline_explain_fn(explain_fn)
-    apply_noise_fn = value_or_default(noise_fn, lambda: multiplicative_noise)
+    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
+    apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
+    apply_noise_fn = resolve_noise_fn(apply_noise_fn)
 
     explanations_array = tf.TensorArray(
         x_batch.dtype,
@@ -270,7 +298,7 @@ def smooth_grad(
     return scores
 
 
-@plain_text_hook
+@plain_text_inputs
 @tensor_inputs
 def noise_grad(
     model: TFPreTrainedModel,
@@ -278,8 +306,6 @@ def noise_grad(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradConfig | None = None,
-    explain_fn: ExplainFn | BaselineExplainFn = "IntGrad",
-    noise_fn: ApplyNoiseFn | None = None,
 ) -> tf.Tensor:
     """
     NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
@@ -318,8 +344,10 @@ def noise_grad(
     """
 
     config = value_or_default(config, lambda: NoiseGradConfig())
-    explain_fn = resolve_baseline_explain_fn(explain_fn)
-    apply_noise_fn = value_or_default(noise_fn, lambda: multiplicative_noise)
+    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
+    apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
+    apply_noise_fn = resolve_noise_fn(apply_noise_fn)
+
     original_weights = model.weights.copy()
 
     explanations_array = tf.TensorArray(
@@ -351,7 +379,7 @@ def noise_grad(
     return scores
 
 
-@plain_text_hook
+@plain_text_inputs
 @tensor_inputs
 def noise_grad_plus_plus(
     model: TFPreTrainedModel,
@@ -359,8 +387,6 @@ def noise_grad_plus_plus(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradPlusPlusConfig | None = None,
-    explain_fn="IntGrad",
-    noise_fn=None,
 ) -> tf.Tensor:
     """
     NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
@@ -397,13 +423,12 @@ def noise_grad_plus_plus(
         n=config.m,
         mean=config.sg_mean,
         std=config.sg_std,
+        explain_fn=config.explain_fn,
+        noise_fn=config.noise_fn,
     )
-    sg_explain_fn = partial(
-        smooth_grad, config=sg_config, explain_fn=explain_fn, noise_fn=noise_fn
-    )
+    sg_explain_fn = partial(smooth_grad, config=sg_config)
     ng_config = NoiseGradConfig(
-        n=config.n,
-        mean=config.mean,
+        n=config.n, mean=config.mean, explain_fn=sg_explain_fn, noise_fn=config.noise_fn
     )
     return noise_grad(
         model,
@@ -411,8 +436,6 @@ def noise_grad_plus_plus(
         y_batch,
         attention_mask,
         config=ng_config,
-        explain_fn=sg_explain_fn,
-        noise_fn=noise_fn,
     )
 
 
@@ -500,12 +523,38 @@ def lime(
     x_batch: List[str],
     y_batch: tf.Tensor,
     tokenizer: PreTrainedTokenizerBase,
-    config: LimeConfig = LimeConfig(),
-    distance_fn: DistanceFn = tf.keras.losses.cosine_similarity,
-    kernel: KernelFn = None,
+    config: LimeConfig | None = None,
 ) -> List[Explanation]:
-    def predict_fn(x):
-        return model.predict(x, verbose=0, batch_size=config.batch_size).logits
+    """
+    LIME explains classifiers by returning a feature attribution score
+    for each input feature. It works as follows:
+
+    1) Sample perturbation masks. First the number of masked features is sampled
+        (uniform, at least 1), and then that number of features are randomly chosen
+        to be masked out (without replacement).
+    2) Get predictions from the model for those perturbations. Use these as labels.
+    3) Fit a linear model to associate the input positions indicated by the binary
+        mask with the resulting predicted label.
+
+    The resulting feature importance scores are the linear model coefficients for
+    the requested output class or (in case of regression) the output score.
+
+    This is a reimplementation of the original https://github.com/marcotcr/lime
+    and is tested for compatibility. This version supports applying LIME to text input.
+
+    Returns
+    -------
+
+    """
+    config = value_or_default(config, lambda: LimeConfig())
+    distance_scale = tf.constant(config.distance_scale)
+    mask_token_id = tokenizer(config.mask_token, return_tensors="tf")[0]
+    distance_fn = value_or_default(
+        config.distance_fn, lambda: tf.keras.losses.cosine_similarity
+    )
+    kernel = value_or_default(config.kernel_fn, lambda: exponential_kernel)
+
+    num_samples = tf.constant(config.num_samples)
 
     input_ids = tf.TensorArray(
         tf.int32,
@@ -516,16 +565,31 @@ def lime(
     for i, x in enumerate(x_batch):
         input_ids = input_ids.write(i, tokenizer(x, return_tensors="tf")["input_ids"])
 
-    scores = base_lime(
-        predict_fn=predict_fn,
-        x_batch=input_ids,
-        y_batch=y_batch,
-        distance_fn=distance_fn,
-        kernel=kernel,
-        distance_scale=config.distance_scale,
-        mask_token_id=tokenizer(config.mask_token)[0],
-        num_samples=config.num_samples,
+    scores = tf.TensorArray(
+        tf.float32,
+        size=config.num_samples,
+        colocate_with_first_write_call=True,
     )
+
+    for i, y in enumerate(y_batch):
+        ids = input_ids.read(i)
+        masks = sample_masks(num_samples - 1, len(ids), seed=42)
+        if masks.shape[0] != num_samples - 1:
+            raise ValueError("Expected num_samples + 1 masks.")
+
+        all_true_mask = tf.ones_like(masks[0], dtype=tf.bool)
+        masks = tf.concat([tf.expand_dims(all_true_mask, 0), masks], axis=0)
+
+        perturbations = mask_tokens(ids, masks, mask_token_id)
+        logits = model.predict(perturbations, verbose=0, batch_size=config.batch_size)
+        outputs = logits[:, y]
+        distances = distance_fn(
+            tf.cast(all_true_mask, dtype=tf.float32), tf.cast(masks, dtype=tf.float32)
+        )  # noqa
+        distances = distance_scale * distances
+        distances = kernel(distances)
+        score = ridge_regression(masks, outputs, sample_weight=distances)
+        scores = scores.write(i, score)
 
     a_batch = [
         (tokenizer.convert_ids_to_tokens(input_ids.read(i)), scores.read(i))
@@ -535,22 +599,3 @@ def lime(
     input_ids.close()
     scores.close()
     return a_batch
-
-
-# --------------------- utils ----------------------
-
-
-def resolve_baseline_explain_fn(explain_fn):
-    if isinstance(explain_fn, Callable):
-        return explain_fn  # type: ignore
-
-    method_mapping = {
-        "IntGrad": integrated_gradients,
-        "GradNorm": gradient_norm,
-        "GradXInput": gradient_x_input,
-    }
-    if explain_fn not in method_mapping:
-        raise ValueError(
-            f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
-        )
-    return method_mapping[explain_fn]

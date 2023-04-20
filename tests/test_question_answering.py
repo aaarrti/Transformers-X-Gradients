@@ -24,6 +24,4 @@ def squad_batch():
 
 @pytest.mark.parametrize("func", [])
 def test_explain_on_plain_text(func, squad_model, squad_tokenizer):
-    explanations = func(
-        squad_model,
-    )
+    pytest.fail("Not Implemented")
