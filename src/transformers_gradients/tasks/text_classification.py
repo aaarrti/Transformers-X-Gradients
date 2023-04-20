@@ -84,7 +84,7 @@ def plain_text_inputs(func):
         if get_config().return_raw_scores:
             return scores
         return [
-            (tokenizer.convert_ids_to_tokens(list(i)), j)
+            (tokenizer.convert_ids_to_tokens(list(i)), j)  # type: ignore
             for i, j in zip(input_ids, scores)
         ]
 
@@ -271,9 +271,11 @@ def smooth_grad(
     config: SmoothGradConfing | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
-    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
+    explain_fn = resolve_baseline_explain_fn(
+        sys.modules[__name__], config.explain_fn
+    )  # noqa
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
-    apply_noise_fn = resolve_noise_fn(apply_noise_fn)
+    apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
 
     explanations_array = tf.TensorArray(
         x_batch.dtype,
@@ -343,9 +345,11 @@ def noise_grad(
     """
 
     config = value_or_default(config, lambda: NoiseGradConfig())
-    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
+    explain_fn = resolve_baseline_explain_fn(
+        sys.modules[__name__], config.explain_fn
+    )  # noqa
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
-    apply_noise_fn = resolve_noise_fn(apply_noise_fn)
+    apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
 
     original_weights = model.weights.copy()
 

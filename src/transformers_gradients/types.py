@@ -10,6 +10,7 @@ from typing import (
     Literal,
     NamedTuple,
     Union,
+    Mapping,
 )
 
 import tensorflow as tf

@@ -51,7 +51,7 @@ def as_tensor(arr) -> tf.Tensor:
 def resolve_baseline_explain_fn(
     module: ExplanationModule, explain_fn: str | ExplainFn
 ) -> ExplainFn:
-    if isinstance(explain_fn, Callable):
+    if isinstance(explain_fn, Callable):  # type: ignore
         return explain_fn  # type: ignore
 
     method_mapping = {
@@ -63,12 +63,12 @@ def resolve_baseline_explain_fn(
         raise ValueError(
             f"Unknown XAI method {explain_fn}, supported are {list(method_mapping.keys())}"
         )
-    return method_mapping[explain_fn]
+    return method_mapping[explain_fn]  # type: ignore
 
 
 def resolve_noise_fn(noise_fn: str | ApplyNoiseFn) -> ApplyNoiseFn:
-    if isinstance(noise_fn, Callable):
-        return noise_fn
+    if isinstance(noise_fn, Callable):  # type: ignore
+        return noise_fn  # type: ignore
 
     from transformers_gradients.functions import additive_noise, multiplicative_noise
 
