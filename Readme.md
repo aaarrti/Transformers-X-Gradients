@@ -4,7 +4,7 @@ like GradientXInput, pun intended.
 
 Collection of gradient-based XAI methods for TensorFlow models from HuggingFace Hub.
 
-![](https://raw.githubusercontent.com/aaarrti/TransformersXGradients/main/example.png)
+![](https://raw.githubusercontent.com/aaarrti/Transformers-X-Gradients/main/example.png)
 
 Work in Progress!!! (let him cook)
 ### Roadmap
