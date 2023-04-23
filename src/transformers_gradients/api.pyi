@@ -14,10 +14,6 @@ from transformers_gradients.types import (
 class text_classification(object):
     # ----------------------------------------------------------------------------
     @staticmethod
-    def gradient_norm(
-        model: TFPreTrainedModel, x_batch, y_batch: tf.Tensor, **kwargs
-    ): ...
-    @staticmethod
     @overload
     def gradient_norm(
         model: TFPreTrainedModel,
@@ -37,11 +33,6 @@ class text_classification(object):
     ) -> List[Explanation]: ...
 
     # ----------------------------------------------------------------------------
-
-    @staticmethod
-    def gradient_x_input(
-        model: TFPreTrainedModel, x_batch, y_batch: tf.Tensor, **kwargs
-    ): ...
     @staticmethod
     @overload
     def gradient_x_input(
@@ -62,16 +53,6 @@ class text_classification(object):
     ) -> List[Explanation]: ...
 
     # ----------------------------------------------------------------------------
-
-    @staticmethod
-    def integrated_gradients(
-        model: TFPreTrainedModel,
-        x_batch,
-        y_batch: tf.Tensor,
-        *,
-        config: IntGradConfig | None = None,
-        **kwargs,
-    ): ...
     @staticmethod
     @overload
     def integrated_gradients(
@@ -94,16 +75,6 @@ class text_classification(object):
     ) -> List[Explanation]: ...
 
     # ----------------------------------------------------------------------------
-
-    @staticmethod
-    def smooth_grad(
-        model: TFPreTrainedModel,
-        x_batch,
-        y_batch: tf.Tensor,
-        *,
-        config: SmoothGradConfing | None = None,
-        **kwargs,
-    ): ...
     @staticmethod
     @overload
     def smooth_grad(
@@ -126,16 +97,6 @@ class text_classification(object):
     ) -> List[Explanation]: ...
 
     # ----------------------------------------------------------------------------
-
-    @staticmethod
-    def noise_grad(
-        model: TFPreTrainedModel,
-        x_batch,
-        y_batch: tf.Tensor,
-        *,
-        config: NoiseGradConfig | None = None,
-        **kwargs,
-    ) -> tf.Tensor: ...
     @staticmethod
     @overload
     def noise_grad(
@@ -158,16 +119,6 @@ class text_classification(object):
     ) -> List[Explanation]: ...
 
     # ----------------------------------------------------------------------------
-
-    @staticmethod
-    def noise_grad_plus_plus(
-        model: TFPreTrainedModel,
-        x_batch,
-        y_batch: tf.Tensor,
-        *,
-        config: NoiseGradPlusPlusConfig | None = None,
-        **kwargs,
-    ): ...
     @staticmethod
     @overload
     def noise_grad_plus_plus(
