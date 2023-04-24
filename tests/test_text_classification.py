@@ -13,6 +13,7 @@ from transformers_gradients import (
     SmoothGradConfing,
     LimeConfig,
     text_classification,
+    ExplainFn,
 )
 from transformers_gradients.utils import encode_inputs
 
@@ -94,7 +95,7 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
         "NoiseGrad++",
     ],
 )
-def test_plain_text(func, sst2_model, sst2_batch, sst2_tokenizer):
+def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     explanations = func(sst2_model, *sst2_batch, tokenizer=sst2_tokenizer)
     assert len(explanations) == BATCH_SIZE
     for t, s in explanations:
@@ -142,8 +143,14 @@ def test_plain_text(func, sst2_model, sst2_batch, sst2_tokenizer):
         "NoiseGrad++",
     ],
 )
-def test_embeddings(func, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
-    explanations = func(sst2_model, *sst2_batch_embeddings, tokenizer=sst2_tokenizer)
+def test_embeddings(func: ExplainFn, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
+    explanations = func(
+        sst2_model,
+        sst2_batch_embeddings[0],
+        sst2_batch_embeddings[1],
+        attention_mask=sst2_batch_embeddings[2],
+        tokenizer=sst2_tokenizer,
+    )
     assert len(explanations) == BATCH_SIZE
     for s in explanations:
         assert isinstance(s, tf.Tensor)

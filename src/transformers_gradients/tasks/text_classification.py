@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import sys
 from functools import wraps, partial
 from typing import List
-import sys
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -14,8 +14,6 @@ from transformers_gradients.functions import (
     interpolate_inputs,
     zeros_baseline,
     multiplicative_noise,
-    pseudo_interpolate,
-    broadcast_expand_dims,
     sample_masks,
     mask_tokens,
     ridge_regression,
@@ -42,23 +40,24 @@ from transformers_gradients.utils import (
 
 
 def tensor_inputs(func):
-    from transformers_gradients.functions import bounding_shape
+    from transformers_gradients.functions import default_attention_mask
 
     @wraps(func)
     def wrapper(
-        model: TFPreTrainedModel,
-        x_batch: tf.Tensor,
-        y_batch: tf.Tensor,
-        attention_mask: tf.Tensor | None = None,
+        model,
+        x_batch,
+        y_batch,
+        *,
+        attention_mask=None,
         **kwargs,
     ):
         x_batch = as_tensor(x_batch)
         y_batch = as_tensor(y_batch)
         attention_mask = value_or_default(
-            attention_mask, lambda: tf.ones(bounding_shape(x_batch), dtype=tf.int32)
+            attention_mask, partial(default_attention_mask, x_batch)
         )
         attention_mask = as_tensor(attention_mask)
-        return func(model, x_batch, y_batch, attention_mask, **kwargs)
+        return func(model, x_batch, y_batch, attention_mask=attention_mask, **kwargs)
 
     return wrapper
 
@@ -68,19 +67,30 @@ def plain_text_inputs(func):
     def wrapper(
         model: TFPreTrainedModel,
         x_batch: List[str] | tf.Tensor,
-        y_batch: tf.Tensor,
-        attention_mask: tf.Tensor | None = None,
+        y_batch,
+        *,
+        attention_mask=None,
         tokenizer: PreTrainedTokenizerBase | None = None,
         **kwargs,
     ):
         if not isinstance(x_batch[0], str):
             return func(
-                model, as_tensor(x_batch), as_tensor(y_batch), attention_mask, **kwargs
+                model,
+                as_tensor(x_batch),
+                as_tensor(y_batch),
+                attention_mask=attention_mask,
+                **kwargs,
             )
 
         input_ids, attention_mask = encode_inputs(tokenizer, x_batch)
         embeddings = model.get_input_embeddings()(input_ids)
-        scores = func(model, embeddings, as_tensor(y_batch), attention_mask, **kwargs)
+        scores = func(
+            model,
+            embeddings,
+            as_tensor(y_batch),
+            attention_mask=attention_mask,
+            **kwargs,
+        )
         if get_config().return_raw_scores:
             return scores
         return [
@@ -197,6 +207,7 @@ def integrated_gradients(
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
+    *,
     config: IntGradConfig | None = None,
 ) -> tf.Tensor:
     """
@@ -242,10 +253,13 @@ def integrated_gradients(
     """
     config = value_or_default(config, lambda: IntGradConfig())
     baseline_fn = value_or_default(config.baseline_fn, lambda: zeros_baseline)
-    interpolated_embeddings = interpolate_inputs(x_batch, config.num_steps, baseline_fn)
+    baseline = baseline_fn(x_batch)
+    interpolated_embeddings = interpolate_inputs(
+        x_batch, baseline, tf.constant(config.num_steps)
+    )
 
     if config.batch_interpolated_inputs:
-        return _integrated_gradients_batched(
+        return integrated_gradients_batched(
             model,
             interpolated_embeddings,
             y_batch,
@@ -253,7 +267,7 @@ def integrated_gradients(
             tf.constant(config.num_steps),
         )
     else:
-        return _integrated_gradients_iterative(
+        return integrated_gradients_iterative(
             model,
             interpolated_embeddings,
             y_batch,
@@ -267,13 +281,12 @@ def smooth_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
+    *,
     attention_mask: tf.Tensor | None = None,
     config: SmoothGradConfing | None = None,
 ) -> tf.Tensor:
     config = value_or_default(config, lambda: SmoothGradConfing())
-    explain_fn = resolve_baseline_explain_fn(
-        sys.modules[__name__], config.explain_fn
-    )  # noqa
+    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
     apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
 
@@ -291,7 +304,7 @@ def smooth_grad(
 
     for n in tf.range(config.n):
         noisy_x = noise_fn(x_batch)
-        explanation = explain_fn(model, noisy_x, y_batch, attention_mask)
+        explanation = explain_fn(model, noisy_x, y_batch, attention_mask=attention_mask)
         explanations_array = explanations_array.write(n, explanation)
 
     scores = tf.reduce_mean(explanations_array.stack(), axis=0)
@@ -305,6 +318,7 @@ def noise_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
+    *,
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradConfig | None = None,
 ) -> tf.Tensor:
@@ -345,9 +359,7 @@ def noise_grad(
     """
 
     config = value_or_default(config, lambda: NoiseGradConfig())
-    explain_fn = resolve_baseline_explain_fn(
-        sys.modules[__name__], config.explain_fn
-    )  # noqa
+    explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
     apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
 
@@ -372,7 +384,7 @@ def noise_grad(
         )
         model.set_weights(noisy_weights)
 
-        explanation = explain_fn(model, x_batch, y_batch, attention_mask)
+        explanation = explain_fn(model, x_batch, y_batch, attention_mask=attention_mask)
         explanations_array = explanations_array.write(n, explanation)
 
     scores = tf.reduce_mean(explanations_array.stack(), axis=0)
@@ -387,6 +399,7 @@ def noise_grad_plus_plus(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
+    *,
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradPlusPlusConfig | None = None,
 ) -> tf.Tensor:
@@ -436,7 +449,7 @@ def noise_grad_plus_plus(
         model,
         x_batch,
         y_batch,
-        attention_mask,
+        attention_mask=attention_mask,
         config=ng_config,
     )
 
@@ -444,7 +457,7 @@ def noise_grad_plus_plus(
 # ----------------------- IntGrad ------------------------
 
 
-def _integrated_gradients_batched(
+def integrated_gradients_batched(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
@@ -453,14 +466,14 @@ def _integrated_gradients_batched(
 ) -> tf.Tensor:
     num_steps = tf.constant(num_steps)
     shape = tf.shape(x_batch)
-    batch_size = shape[0]
+    batch_size = shape[1]
 
     interpolated_embeddings = tf.reshape(
         tf.cast(x_batch, dtype=tf.float32),
         [-1, shape[2], shape[3]],
     )
-    interpolated_y_batch = pseudo_interpolate(y_batch, num_steps)
-    interpolated_mask = pseudo_interpolate(attention_mask, num_steps)
+    interpolated_y_batch = tf.repeat(y_batch, num_steps + 1)
+    interpolated_mask = tf.repeat(attention_mask, num_steps + 1, axis=0)
 
     with tf.GradientTape() as tape:
         tape.watch(interpolated_embeddings)
@@ -480,13 +493,13 @@ def _integrated_gradients_batched(
     return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
 
 
-def _integrated_gradients_iterative(
+def integrated_gradients_iterative(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor,
 ) -> tf.Tensor:
-    batch_size = tf.shape(x_batch)[0]
+    batch_size = tf.shape(x_batch)[1]
     scores = tf.TensorArray(
         x_batch.dtype,
         size=batch_size,
@@ -496,8 +509,10 @@ def _integrated_gradients_iterative(
     for i in tf.range(batch_size):
         interpolated_embeddings = x_batch[i]
 
-        attention_mask_i = broadcast_expand_dims(
-            attention_mask[i], interpolated_embeddings
+        attention_mask_i = tf.repeat(
+            tf.expand_dims(attention_mask[i], axis=0),
+            tf.shape(interpolated_embeddings)[0],
+            axis=0,
         )
 
         with tf.GradientTape() as tape:
@@ -519,10 +534,14 @@ def _integrated_gradients_iterative(
     return scores_stack
 
 
+# ---------------------------- LIME ----------------------------
+
+
 def lime(
     model: TFPreTrainedModel,
     x_batch: List[str],
     y_batch: tf.Tensor,
+    *,
     tokenizer: PreTrainedTokenizerBase,
     config: LimeConfig | None = None,
 ) -> List[Explanation]:

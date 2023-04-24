@@ -1,18 +1,7 @@
 import tensorflow as tf
+import tensorflow_probability as tfp
 
-from transformers_gradients.types import BaselineFn
 from transformers_gradients.utils import is_xla_compatible_platform
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def pseudo_interpolate(x: tf.Tensor, num_steps: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("pseudo_interpolate"):
-        og_shape = tf.convert_to_tensor(tf.shape(x))
-        new_shape = tf.concat([[num_steps + tf.constant(1)], og_shape], axis=0)
-        x = tf.broadcast_to(x, new_shape)
-        flat_shape = tf.concat([tf.constant([-1]), og_shape[1:]], axis=0)
-        x = tf.reshape(x, flat_shape)
-        return x
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
@@ -44,9 +33,11 @@ def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def bounding_shape(arr: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("bounding_shape"):
-        return tf.constant([tf.shape(arr)[0], tf.shape(arr)[1]])
+def default_attention_mask(x_batch: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope("default_attention_mask"):
+        return tf.ones(
+            tf.gather(tf.shape(x_batch), tf.constant([0, 1])), dtype=tf.int32
+        )
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
@@ -56,44 +47,24 @@ def zeros_baseline(arr: tf.Tensor) -> tf.Tensor:
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def _interpolate_inputs(
-    baseline: tf.Tensor, target: tf.Tensor, num_steps: int
-) -> tf.Tensor:
-    """Gets num_step linearly interpolated inputs from baseline to target."""
-    with tf.name_scope("interpolate_inputs"):
-        # tfp.python.math.interpolation.batch_interp_regular_nd_grid()
-        delta = target - baseline
-        scales = tf.linspace(0, 1, num_steps + 1)[:, tf.newaxis, tf.newaxis]
-        scales = tf.cast(scales, dtype=delta.dtype)
-        shape = tf.convert_to_tensor(
-            [num_steps + 1, tf.shape(delta)[0], tf.shape(delta)[1]]
-        )
-        deltas = scales * tf.broadcast_to(delta, shape)
-        interpolated_inputs = baseline + deltas
-        return interpolated_inputs
-
-
 def interpolate_inputs(
-    x_batch: tf.Tensor, num_steps: int, baseline_fn: BaselineFn
+    x_batch: tf.Tensor, baseline: tf.Tensor, num_steps: tf.Tensor
 ) -> tf.Tensor:
-    return tf.vectorized_map(
-        lambda i: _interpolate_inputs(baseline_fn(i), i, tf.constant(num_steps)),
-        x_batch,
+    return tfp.math.batch_interp_regular_1d_grid(
+        x=tf.cast(tf.range(num_steps + tf.constant(1)), dtype=tf.float32),
+        x_ref_min=tf.cast(0, dtype=tf.float32),
+        x_ref_max=tf.cast(num_steps, dtype=tf.float32),
+        y_ref=[x_batch, baseline],
+        axis=0,
     )
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def broadcast_expand_dims(x: tf.Tensor, target: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("broadcast_expand_dims"):
-        return tf.broadcast_to(x, tf.stack([tf.shape(target)[0], tf.shape(x)[0]]))
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def exponential_kernel(distance: tf.Tensor, kernel_width: tf.Tensor = 25) -> tf.Tensor:
-    with tf.name_scope("exponential_kernel"):
-        return tf.sqrt(
-            tf.exp(-(distance ** tf.constant(2.0)) / kernel_width ** tf.constant(2.0))
-        )
+    x = tf.expand_dims(distance, 1)
+    return tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=kernel_width).apply(
+        x, tf.zeros_like(x)
+    )
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
@@ -121,12 +92,6 @@ def mask_tokens(
         ids_batch = tf.repeat(tf.expand_dims(token_ids, 0), tf.shape(masks)[0], axis=0)
         masks = tf.cast(masks, tf.int32)
         return (ids_batch * (tf.ones_like(masks) - masks)) + (masks * mask_token_id)
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def ndim(arr: tf.Tensor) -> int:
-    with tf.name_scope("ndim"):
-        return tf.size(tf.shape(arr))
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())

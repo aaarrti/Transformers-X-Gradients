@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import platform
+from types import ModuleType
 from typing import TypeVar, Callable, List, Tuple
 
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
 
-from transformers_gradients.types import ExplanationModule, ExplainFn, ApplyNoiseFn
+from transformers_gradients.types import ExplainFn, ApplyNoiseFn
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -49,7 +50,7 @@ def as_tensor(arr) -> tf.Tensor:
 
 
 def resolve_baseline_explain_fn(
-    module: ExplanationModule, explain_fn: str | ExplainFn
+    module: ModuleType, explain_fn: str | ExplainFn
 ) -> ExplainFn:
     if isinstance(explain_fn, Callable):  # type: ignore
         return explain_fn  # type: ignore

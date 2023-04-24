@@ -28,20 +28,6 @@ KernelFn = Callable[[tf.Tensor], tf.Tensor]
 
 
 @runtime_checkable
-class ModelFn(Protocol):
-    def __call__(
-        self, *, inputs_embeds: tf.Tensor, attention_mask: tf.Tensor
-    ) -> Mapping[str, tf.Tensor]:
-        ...
-
-
-@runtime_checkable
-class UserObject(Protocol):
-    signatures: Mapping[str, ModelFn]
-    variables: ListWrapper[tf.Variable]
-
-
-@runtime_checkable
 class ExplainFn(Protocol):
     @overload
     def __call__(
@@ -80,16 +66,9 @@ class ExplainFn(Protocol):
         ...
 
 
-@runtime_checkable
-class ExplanationModule(Protocol):
-    gradient_norm: ExplainFn
-    gradient_x_input: ExplainFn
-    integrated_gradients: ExplainFn
-
-
 class LibConfig(NamedTuple):
     prng_seed: int = 42
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"
     log_format: str = "%(asctime)s:[%(filename)s:%(lineno)s->%(funcName)s()]:%(levelname)s: %(message)s"
     return_raw_scores: bool = False
 

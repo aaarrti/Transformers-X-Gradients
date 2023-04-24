@@ -11,7 +11,7 @@ from transformers_gradients.types import (
     ApplyNoiseFn,
 )
 from transformers_gradients.plotting import visualise_explanations_as_html
-from transformers_gradients.api import *
+from transformers_gradients.api import text_classification
 
 config = LibConfig()
 
