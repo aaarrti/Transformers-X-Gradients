@@ -9,6 +9,7 @@ if TYPE_CHECKING:
         NoiseGradConfig,
         SmoothGradConfing,
         NoiseGradPlusPlusConfig,
+        LimeConfig,
     )
     from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
@@ -38,10 +39,19 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def gradient_norm(*args, **kwargs):
+    def gradient_norm(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import gradient_norm
 
-        return gradient_norm(*args, **kwargs)
+        return gradient_norm(
+            model, x_batch, y_batch, tokenizer=tokenizer, attention_mask=attention_mask
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
@@ -67,10 +77,19 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def gradient_x_input(*args, **kwargs):
+    def gradient_x_input(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import gradient_x_input
 
-        return gradient_x_input(*args, **kwargs)
+        return gradient_x_input(
+            model, x_batch, y_batch, tokenizer=tokenizer, attention_mask=attention_mask
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
@@ -98,12 +117,27 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def integrated_gradients(*args, **kwargs):
+    def integrated_gradients(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+        config: IntGradConfig | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import (
             integrated_gradients,
         )
 
-        return integrated_gradients(*args, **kwargs)
+        return integrated_gradients(
+            model,
+            x_batch,
+            y_batch,
+            tokenizer=tokenizer,
+            attention_mask=attention_mask,
+            config=config,
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
@@ -131,10 +165,25 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def smooth_grad(*args, **kwargs):
+    def smooth_grad(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+        config: SmoothGradConfing | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import smooth_grad
 
-        return smooth_grad(*args, **kwargs)
+        return smooth_grad(
+            model,
+            x_batch,
+            y_batch,
+            tokenizer=tokenizer,
+            attention_mask=attention_mask,
+            config=config,
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
@@ -162,10 +211,25 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def noise_grad(*args, **kwargs):
+    def noise_grad(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+        config: NoiseGradConfig | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import smooth_grad
 
-        return smooth_grad(*args, **kwargs)
+        return smooth_grad(
+            model,
+            x_batch,
+            y_batch,
+            tokenizer=tokenizer,
+            attention_mask=attention_mask,
+            config=config,
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
@@ -193,16 +257,38 @@ class text_classification(object):
         ...
 
     @staticmethod
-    def noise_grad_plus_plus(*args, **kwargs):
+    def noise_grad_plus_plus(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+        config: NoiseGradPlusPlusConfig | None = None,
+    ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import (
             noise_grad_plus_plus,
         )
 
-        return noise_grad_plus_plus(*args, **kwargs)
+        return noise_grad_plus_plus(
+            model,
+            x_batch,
+            y_batch,
+            tokenizer=tokenizer,
+            attention_mask=attention_mask,
+            config=config,
+        )
 
     # ----------------------------------------------------------------------------
     @staticmethod
-    def lime(*args, **kwargs):
+    def lime(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        config: LimeConfig | None = None,
+    ) -> List[Explanation]:
         from transformers_gradients.tasks.text_classification import lime
 
-        return lime(*args, **kwargs)
+        return lime(model, x_batch, y_batch, tokenizer=tokenizer, config=config)

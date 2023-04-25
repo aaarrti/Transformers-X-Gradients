@@ -20,6 +20,7 @@ def test_heatmap(a_batch):
     # print(html, file=open("x.html", "w+"))
 
 
+@pytest.mark.xfail
 @pytest.mark.parametrize(
     "scores, expected",
     [

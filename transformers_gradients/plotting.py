@@ -25,13 +25,19 @@ class HeatmapModel(BaseModel):
     explanation: List[ExplanationModel]
 
 
+def post_process_colors(colors: tf.Tensor) -> List[Tuple[float, float, float]]:
+    colors = colors.numpy().tolist()
+    colors = map_(colors, tuple)
+    return colors
+
+
 def map_to_rgb(
     scores: tf.Tensor,
     *,
     config: PlottingConfig,
     max_score: float | None = None,
     min_score: float | None = None,
-) -> List[Tuple[float, float]]:
+) -> List[Tuple[float, float, float]]:
     """
     - Highest score get red (255,0,0).
     - Lowest score gets blue (0,0,255).
@@ -42,23 +48,48 @@ def map_to_rgb(
     min_score = value_or_default(min_score, lambda: tf.reduce_min(scores))
     max_score = value_or_default(max_score, lambda: tf.reduce_max(scores))
 
-    max_color = tf.constant([rgb_range, 0.0, 0.0])
-
-    if min_score < 0:
-        min_color = tf.constant([0.0, 0.0, rgb_range])
-    else:
-        min_color = tf.constant([rgb_range, rgb_range, rgb_range])
-
-    colors = tfp.math.interp_regular_1d_grid(
-        x=scores,
-        x_ref_min=min_score,
-        x_ref_max=max_score,
-        y_ref=[min_color, max_color],
-        axis=0,
+    positive_colors = (
+        tfp.math.interp_regular_1d_grid(
+            x=tf.abs(scores),
+            x_ref_min=min_score,
+            x_ref_max=max_score,
+            y_ref=[
+                tf.constant([rgb_range, rgb_range, rgb_range]),
+                tf.constant([rgb_range, 0.0, 0.0]),
+            ],
+            axis=0,
+        )
+        * config.rbg_scale
     )
-    colors = colors * tf.constant(config.rbg_scale)
-    colors = colors.numpy().tolist()
-    colors = map_(colors, tuple)
+
+    positive_colors = post_process_colors(positive_colors)
+
+    if tf.reduce_min(scores) > 0:
+        return positive_colors
+
+    negative_colors = (
+        tfp.math.interp_regular_1d_grid(
+            x=-1 * tf.abs(scores),
+            x_ref_min=min_score,
+            x_ref_max=max_score,
+            y_ref=[
+                tf.constant([0.0, 0.0, rgb_range]),
+                tf.constant([rgb_range, rgb_range, rgb_range]),
+            ],
+            axis=0,
+        )
+        * config.rbg_scale
+    )
+
+    negative_colors = post_process_colors(negative_colors)
+
+    colors = []
+    for i, s in enumerate(scores):
+        if s >= 0:
+            colors.append(positive_colors[i])
+        else:
+            colors.append(negative_colors[i])
+
     return colors
 
 
