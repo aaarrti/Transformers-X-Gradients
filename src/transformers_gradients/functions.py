@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_probability as tfp
 
 from transformers_gradients.utils import is_xla_compatible_platform
 
@@ -46,28 +45,7 @@ def zeros_baseline(arr: tf.Tensor) -> tf.Tensor:
         return tf.zeros_like(arr)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def interpolate_inputs(
-    x_batch: tf.Tensor, baseline: tf.Tensor, num_steps: tf.Tensor
-) -> tf.Tensor:
-    return tfp.math.batch_interp_regular_1d_grid(
-        x=tf.cast(tf.range(num_steps + tf.constant(1)), dtype=tf.float32),
-        x_ref_min=tf.cast(0, dtype=tf.float32),
-        x_ref_max=tf.cast(num_steps, dtype=tf.float32),
-        y_ref=[x_batch, baseline],
-        axis=0,
-    )
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def exponential_kernel(distance: tf.Tensor, kernel_width: tf.Tensor = 25) -> tf.Tensor:
-    x = tf.expand_dims(distance, 1)
-    return tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=kernel_width).apply(
-        x, tf.zeros_like(x)
-    )
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def sample_masks(num_samples: int, num_features: int, seed: int = 42):
     with tf.name_scope("sample_masks"):
         positions = tf.tile(
@@ -84,7 +62,7 @@ def sample_masks(num_samples: int, num_features: int, seed: int = 42):
         return tf.math.greater_equal(permutations, num_disabled_features)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def mask_tokens(
     token_ids: tf.Tensor, masks: tf.Tensor, mask_token_id: tf.Tensor
 ) -> tf.Tensor:

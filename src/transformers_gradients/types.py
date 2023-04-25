@@ -178,5 +178,3 @@ class LimeConfig(NamedTuple):
     mask_token: str = "[UNK]"
     distance_scale: float = 100.0
     batch_size: int = 256
-    distance_fn: DistanceFn | None = None
-    kernel_fn: KernelFn | None = None

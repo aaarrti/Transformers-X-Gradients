@@ -11,13 +11,11 @@ from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 from transformers_gradients import get_config
 from transformers_gradients.functions import (
     logits_for_labels,
-    interpolate_inputs,
     zeros_baseline,
     multiplicative_noise,
     sample_masks,
     mask_tokens,
     ridge_regression,
-    exponential_kernel,
 )
 from transformers_gradients.types import (
     IntGradConfig,
@@ -252,10 +250,13 @@ def integrated_gradients(
 
     """
     config = value_or_default(config, lambda: IntGradConfig())
-    baseline_fn = value_or_default(config.baseline_fn, lambda: zeros_baseline)
-    baseline = baseline_fn(x_batch)
-    interpolated_embeddings = interpolate_inputs(
-        x_batch, baseline, tf.constant(config.num_steps)
+    baseline = value_or_default(config.baseline_fn, lambda: zeros_baseline)(x_batch)
+    interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
+        x=tf.cast(tf.range(config.num_steps + 1), dtype=tf.float32),
+        x_ref_min=tf.cast(0, dtype=tf.float32),
+        x_ref_max=tf.cast(config.num_steps, dtype=tf.float32),
+        y_ref=[x_batch, baseline],
+        axis=0,
     )
 
     if config.batch_interpolated_inputs:
@@ -569,10 +570,6 @@ def lime(
     config = value_or_default(config, lambda: LimeConfig())
     distance_scale = tf.constant(config.distance_scale)
     mask_token_id = tokenizer.convert_tokens_to_ids(config.mask_token)
-    distance_fn = value_or_default(
-        config.distance_fn, lambda: tf.keras.losses.cosine_similarity
-    )
-    kernel = value_or_default(config.kernel_fn, lambda: exponential_kernel)
 
     num_samples = tf.constant(config.num_samples)
     a_batch = []
@@ -589,11 +586,13 @@ def lime(
         perturbations = mask_tokens(ids, masks, mask_token_id)
         logits = model(perturbations).logits
         outputs = logits[:, y]
-        distances = distance_fn(
+        distances = tf.keras.losses.cosine_similarity(
             tf.cast(all_true_mask, dtype=tf.float32), tf.cast(masks, dtype=tf.float32)
-        )  # noqa
+        )
         distances = distance_scale * distances
-        distances = kernel(distances)
+        distances = tfp.math.psd_kernels.ExponentiatedQuadratic(
+            length_scale=25.0
+        ).apply(distances[:, tf.newaxis], tf.zeros_like(distances[:, tf.newaxis]))
         score = ridge_regression(masks, outputs, sample_weight=distances)
         a_batch.append((tokenizer.convert_ids_to_tokens(ids), score))
 
