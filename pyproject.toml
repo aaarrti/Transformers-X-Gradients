@@ -17,7 +17,7 @@ name = "transformers_gradients"  # Required
 #
 # For a discussion on single-sourcing the version, see
 # https://packaging.python.org/guides/single-sourcing-package-version/
-version = "0.0.10"  # Required
+version = "0.0.12"  # Required
 
 # This is a one-line description or tagline of what your project does. This
 # corresponds to the "Summary" metadata field:
@@ -98,13 +98,6 @@ dependencies = [
 [project.optional-dependencies] # Optional
 transformers = [
     "transformers >= 4.27.4",
-]
-test = [
-    "pytest",
-]
-lint = [
-    "mypy",
-    "black"
 ]
 [project.urls]  # Optional
 "Homepage" = "https://github.com/aaarrti/TransformersXGradients"
