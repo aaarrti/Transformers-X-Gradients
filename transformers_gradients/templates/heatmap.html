@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+
+        .container {
+            line-height: 1.4;
+            text-align: center;
+            margin: 10px 10px 10px 10px;
+            color: black;
+            background: white;
+        }
+
+        p {
+            font-size: 16px;
+        }
+
+        .highlight-container, .highlight {
+            position: relative;
+            border-radius: 10% 10% 10% 10%;
+        }
+
+        .highlight-container {
+            display: inline-block;
+        }
+
+        .highlight-container:before {
+            content: " ";
+            display: block;
+            height: 90%;
+            width: 100%;
+            margin-left: -3px;
+            margin-right: -3px;
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            padding: 10px 3px 3px 10px;
+        }
+
+    </style>
+</head>
+<body>
+{% for explanation in explanations_batch %}
+<div class="container">
+    <p> {{explanation.label}} <br>
+        {% for token in explanation.explanation %}
+        <span class="highlight-container" style="background:rgb{{token.color}} ;">
+        <span class="highlight"> {{token.item}} </span>
+        </span> {% endfor %}
+    </p>
+</div>
+{% endfor %}
+</body>
+</html>

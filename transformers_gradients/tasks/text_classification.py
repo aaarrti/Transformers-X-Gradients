@@ -8,7 +8,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
-from transformers_gradients import get_config
+
 from transformers_gradients.functions import (
     logits_for_labels,
     zeros_baseline,
@@ -17,7 +17,7 @@ from transformers_gradients.functions import (
     mask_tokens,
     ridge_regression,
 )
-from transformers_gradients.types import (
+from transformers_gradients.lib_types import (
     IntGradConfig,
     NoiseGradPlusPlusConfig,
     NoiseGradConfig,
@@ -92,7 +92,9 @@ def plain_text_inputs(func):
             attention_mask=attention_mask,
             **kwargs,
         )
-        if get_config().return_raw_scores:
+        from transformers_gradients import config
+
+        if config.return_raw_scores:
             return scores
         return [
             (tokenizer.convert_ids_to_tokens(list(i)), j)  # type: ignore

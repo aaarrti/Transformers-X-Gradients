@@ -1,15 +1,16 @@
 from __future__ import annotations
-from typing import overload, List
+from typing import overload, List, TYPE_CHECKING
 import tensorflow as tf
 
-from transformers_gradients.types import (
-    Explanation,
-    IntGradConfig,
-    NoiseGradConfig,
-    SmoothGradConfing,
-    NoiseGradPlusPlusConfig,
-)
-from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
+if TYPE_CHECKING:
+    from transformers_gradients.lib_types import (
+        Explanation,
+        IntGradConfig,
+        NoiseGradConfig,
+        SmoothGradConfing,
+        NoiseGradPlusPlusConfig,
+    )
+    from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 
 class text_classification(object):

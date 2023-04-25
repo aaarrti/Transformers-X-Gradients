@@ -1,4 +1,4 @@
-from transformers_gradients.types import (
+from transformers_gradients.lib_types import (
     IntGradConfig,
     SmoothGradConfing,
     NoiseGradConfig,
@@ -9,11 +9,12 @@ from transformers_gradients.types import (
     Explanation,
     ExplainFn,
     ApplyNoiseFn,
+    PlottingConfig,
 )
-from transformers_gradients.plotting import visualise_explanations_as_html
+from transformers_gradients.plotting import html_heatmap
 from transformers_gradients.api import text_classification
 
-config = LibConfig()
+config = LibConfig()  # type: ignore
 
 
 def update_config(**kwargs):
@@ -23,18 +24,13 @@ def update_config(**kwargs):
 
     global config
 
-    config = LibConfig()
+    values = config.dict()
+    values.update(kwargs)
+
+    config = LibConfig(**values)
     tf.random.set_seed(config.prng_seed)
     np.random.seed(config.prng_seed)
 
     logging.basicConfig(
         format=config.log_format, level=logging.getLevelName(config.log_level)
     )
-
-
-def get_config() -> LibConfig:
-    global config
-    return config
-
-
-update_config()

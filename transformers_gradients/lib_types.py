@@ -10,11 +10,10 @@ from typing import (
     Literal,
     NamedTuple,
     Union,
-    Mapping,
 )
 
 import tensorflow as tf
-from tensorflow.python.trackable.data_structures import ListWrapper
+from pydantic import BaseSettings, Field
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 BaselineFn = Callable[[tf.Tensor], tf.Tensor]
@@ -25,6 +24,8 @@ ApplyNoiseFn = Union[
 BaselineExplainFn = Literal["GradNorm", "GradXInput", "IntGrad"]
 DistanceFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
 KernelFn = Callable[[tf.Tensor], tf.Tensor]
+ColorMappingStrategy = Literal["global", "row-wise"]
+RgbRange = Literal[1, 255]
 
 
 @runtime_checkable
@@ -66,11 +67,14 @@ class ExplainFn(Protocol):
         ...
 
 
-class LibConfig(NamedTuple):
-    prng_seed: int = 42
-    log_level: str = "DEBUG"
-    log_format: str = "%(asctime)s:[%(filename)s:%(lineno)s->%(funcName)s()]:%(levelname)s: %(message)s"
-    return_raw_scores: bool = False
+class LibConfig(BaseSettings):
+    prng_seed: int = Field(42, env="TG_PRNG_SEED")
+    log_level: str = Field("DEBUG", env="TG_LOG_LEVEL")
+    log_format: str = Field(
+        "%(asctime)s:[%(filename)s:%(lineno)s->%(funcName)s()]:%(levelname)s: %(message)s",
+        env="TG_LOG_FORMAT",
+    )
+    return_raw_scores: bool = Field(False, env="TG_RETRUN_RAW_SCORES")
 
 
 class IntGradConfig(NamedTuple):
@@ -178,3 +182,27 @@ class LimeConfig(NamedTuple):
     mask_token: str = "[UNK]"
     distance_scale: float = 100.0
     batch_size: int = 256
+
+
+class PlottingConfig(NamedTuple):
+    """
+    ignore_special_tokens:
+        If true, values in config.special_tokens will not be rendered on the heatmap.
+    return_raw_html:
+        If true, will return html string, by default will try to render in Jupyter.
+    color_mapping_strategy:
+        - global: RGB space is spanned by all explanations.
+        Use when you want to compare different XAI methods or hyperparameter configurations.
+        - row-wise: create separate RGB space for each explanation.
+    special_tokens:
+        List of tokens to ignore during rendering, if ignore_special_tokens=True, default=["[CLS]", "[SEP]", "[PAD]"].
+    rgb_scale:
+        Scaling factor for colors, default=1.
+    """
+
+    ignore_special_tokens: bool = False
+    return_raw_html: bool = False
+    color_mapping_strategy: ColorMappingStrategy = "row-wise"
+    special_tokens: List[str] = ["[CLS]", "[SEP]", "[PAD]"]
+    rbg_scale: float | Tuple[float, float, float] = 1.0
+    rbg_range: RgbRange = 255
