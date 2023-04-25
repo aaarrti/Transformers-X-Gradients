@@ -47,6 +47,7 @@ def create_div(
     label: str,
     ignore_special_tokens: bool,
     special_tokens: List[str],
+    color_mapper: ColorMapper,
 ) -> str:
     # Create a container, which inherits root styles.
     div_template = """
@@ -67,7 +68,6 @@ def create_div(
     tokens = explanation[0]
     scores = explanation[1]
     body = ""
-    color_mapper = ColorMapper(np.max(scores), np.min(scores))
 
     for token, score in zip(tokens, scores):
         if ignore_special_tokens and token in special_tokens:
@@ -157,9 +157,14 @@ def visualise_explanations_as_html(
         """
 
     spans = ""
+    color_mapper = ColorMapper(
+        np.max([i[1] for i in explanations]), np.min(i[1] for i in explanations)
+    )
     # For each token, create a separate div holding whole input sequence on 1 line.
     for i, explanation in enumerate(explanations):
         label = labels[i] if labels is not None else ""
-        div = create_div(explanation, label, ignore_special_tokens, special_tokens)
+        div = create_div(
+            explanation, label, ignore_special_tokens, special_tokens, color_mapper
+        )
         spans += div
     return heatmap_template.replace("{{body}}", spans)
