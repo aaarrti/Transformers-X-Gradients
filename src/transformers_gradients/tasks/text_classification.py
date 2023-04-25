@@ -80,6 +80,9 @@ def plain_text_inputs(func):
                 **kwargs,
             )
 
+        if tokenizer is None:
+            raise ValueError("Must provide tokenizer for plain-text inputs.")
+
         input_ids, attention_mask = encode_inputs(tokenizer, x_batch)
         embeddings = model.get_input_embeddings()(input_ids)
         scores = func(
