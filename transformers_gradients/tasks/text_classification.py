@@ -115,35 +115,6 @@ def gradient_norm(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
 ) -> tf.Tensor:
-    """
-    A baseline GradientNorm text-classification explainer.
-    The implementation is based on https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L38.
-    GradientNorm explanation algorithm is:
-        - Convert inputs to models latent representations.
-        - Execute forwards pass
-        - Retrieve logits for y_batch.
-        - Compute gradient of logits with respect to input embeddings.
-        - Compute L2 norm of gradients.
-
-    References:
-    ----------
-    - https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L38
-
-    Parameters
-    ----------
-    model:
-        A model, which is subject to explanation.
-    x_batch:
-        A batch of plain text inputs or their embeddings, which are subjects to explanation.
-    y_batch:
-        A batch of labels, which are subjects to explanation.
-
-    Returns
-    -------
-    a_batch:
-        List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
-
-    """
     with tf.GradientTape() as tape:
         tape.watch(x_batch)
         logits = model(
@@ -163,36 +134,6 @@ def gradient_x_input(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
 ) -> tf.Tensor:
-    """
-    A baseline GradientXInput text-classification explainer.
-     The implementation is based on https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L108.
-     GradientXInput explanation algorithm is:
-        - Convert inputs to models latent representations.
-        - Execute forwards pass
-        - Retrieve logits for y_batch.
-        - Compute gradient of logits with respect to input embeddings.
-        - Compute vector dot product between input embeddings and gradients.
-
-
-    References:
-    ----------
-    - https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L108
-
-    Parameters
-    ----------
-    model:
-        A model, which is subject to explanation.
-    x_batch:
-        A batch of plain text inputs or their embeddings, which are subjects to explanation.
-    y_batch:
-        A batch of labels, which are subjects to explanation.
-
-    Returns
-    -------
-    a_batch:
-        List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
-
-    """
     with tf.GradientTape() as tape:
         tape.watch(x_batch)
         logits = model(
@@ -213,47 +154,6 @@ def integrated_gradients(
     *,
     config: IntGradConfig | None = None,
 ) -> tf.Tensor:
-    """
-    A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:
-        - Convert inputs to models latent representations.
-        - For each x, y in x_batch, y_batch
-        - Generate num_steps samples interpolated from baseline to x.
-        - Execute forwards pass.
-        - Retrieve logits for y.
-        - Compute gradient of logits with respect to interpolated samples.
-        - Estimate integral over interpolated samples using trapezoid rule.
-    In practise, we combine all interpolated samples in one batch, to avoid executing forward and backward passes
-    in for-loop. This means potentially, that batch size selected for this XAI method should be smaller than usual.
-
-    References:
-    ----------
-    - https://github.com/PAIR-code/lit/blob/main/lit_nlp/components/gradient_maps.py#L108
-    - Sundararajan et al., 2017, Axiomatic Attribution for Deep Networks, https://arxiv.org/pdf/1703.01365.pdf
-
-    Parameters
-    ----------
-    model:
-        A model, which is subject to explanation.
-    x_batch:
-        A batch of plain text inputs or their embeddings, which are subjects to explanation.
-    y_batch:
-        A batch of labels, which are subjects to explanation.
-
-    Returns
-    -------
-    a_batch:
-        List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
-
-    Examples
-    -------
-    Specifying [UNK] token as baseline:
-
-    >>> unk_token_embedding = model.embedding_lookup([model.tokenizer.unk_token_id])[0, 0]
-    >>> unknown_token_baseline_function = tf.function(lambda x: unk_token_embedding)
-    >>> config = IntGradConfig(baseline_fn=unknown_token_baseline_function)
-    >>> integrated_gradients(..., ..., ..., config=config)
-
-    """
     config = value_or_default(config, lambda: IntGradConfig())
     baseline = value_or_default(config.baseline_fn, lambda: zeros_baseline)(x_batch)
     interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
@@ -328,42 +228,6 @@ def noise_grad(
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradConfig | None = None,
 ) -> tf.Tensor:
-    """
-    NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
-    by adding stochasticity to model's weights. The implementation is based
-    on https://github.com/understandable-machine-intelligence-lab/NoiseGrad/blob/master/src/noisegrad.py#L80.
-
-    Parameters
-    ----------
-    model:
-        A model, which is subject to explanation.
-    x_batch:
-        A batch of plain text inputs or their embeddings, which are subjects to explanation.
-    y_batch:
-        A batch of labels, which are subjects to explanation.
-    Returns
-    -------
-    a_batch:
-        List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
-
-
-    Examples
-    -------
-    Passing kwargs to baseline explanation function:
-
-    >>> import functools
-    >>> ig_config = IntGradConfig(num_steps=22)
-    >>> explain_fn = functools.partial(integrated_gradients, config=ig_config)
-    >>> ng_config = NoiseGradConfig(explain_fn=explain_fn)
-    >>> noise_grad_plus_plus(config=ng_config)
-
-    References
-    -------
-    - https://github.com/understandable-machine-intelligence-lab/NoiseGrad/blob/master/src/noisegrad.py#L80.
-    - Kirill Bykov and Anna Hedström and Shinichi Nakajima and Marina M. -C. Höhne, 2021, NoiseGrad: enhancing explanations by introducing stochasticity to model weights, https://arxiv.org/abs/2106.10185
-
-    """
-
     config = value_or_default(config, lambda: NoiseGradConfig())
     explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
@@ -409,36 +273,6 @@ def noise_grad_plus_plus(
     attention_mask: tf.Tensor | None = None,
     config: NoiseGradPlusPlusConfig | None = None,
 ) -> tf.Tensor:
-    """
-    NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
-    by adding stochasticity to model's weights and model's inputs. The implementation is based
-    on https://github.com/understandable-machine-intelligence-lab/NoiseGrad/blob/master/src/noisegrad.py#L80.
-
-    Parameters
-    ----------
-    model:
-        A model, which is subject to explanation.
-    x_batch:
-        A batch of plain text inputs or their embeddings, which are subjects to explanation.
-    y_batch:
-        A batch of labels, which are subjects to explanation.
-    config:
-    Returns
-    -------
-    a_batch:
-        List of tuples, where 1st element is tokens and 2nd is the scores assigned to the tokens.
-
-
-    Examples
-    -------
-    Passing kwargs to baseline explanation function:
-
-    References
-    -------
-    - https://github.com/understandable-machine-intelligence-lab/NoiseGrad/blob/master/src/noisegrad.py#L80.
-    - Kirill Bykov and Anna Hedström and Shinichi Nakajima and Marina M. -C. Höhne, 2021, NoiseGrad: enhancing explanations by introducing stochasticity to model weights, https://arxiv.org/abs/2106.10185
-
-    """
     config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
     sg_config = SmoothGradConfing(
         n=config.m,
@@ -551,27 +385,6 @@ def lime(
     tokenizer: PreTrainedTokenizerBase,
     config: LimeConfig | None = None,
 ) -> List[Explanation]:
-    """
-    LIME explains classifiers by returning a feature attribution score
-    for each input feature. It works as follows:
-
-    1) Sample perturbation masks. First the number of masked features is sampled
-        (uniform, at least 1), and then that number of features are randomly chosen
-        to be masked out (without replacement).
-    2) Get predictions from the model for those perturbations. Use these as labels.
-    3) Fit a linear model to associate the input positions indicated by the binary
-        mask with the resulting predicted label.
-
-    The resulting feature importance scores are the linear model coefficients for
-    the requested output class or (in case of regression) the output score.
-
-    This is a reimplementation of the original https://github.com/marcotcr/lime
-    and is tested for compatibility. This version supports applying LIME to text input.
-
-    Returns
-    -------
-
-    """
     config = value_or_default(config, lambda: LimeConfig())
     distance_scale = tf.constant(config.distance_scale)
     mask_token_id = tokenizer.convert_tokens_to_ids(config.mask_token)

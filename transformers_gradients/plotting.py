@@ -44,7 +44,7 @@ def map_to_rgb(
     - Positive scores are linearly interpolated between red and white (255, 255, 255).
     - Negative scores are linearly interpolated between blue and white (255, 255, 255).
     """
-    rgb_range = float(config.rbg_range)
+    rgb_range = float(config.rgb_range)
     min_score = value_or_default(min_score, lambda: tf.reduce_min(scores))
     max_score = value_or_default(max_score, lambda: tf.reduce_max(scores))
 
@@ -59,7 +59,7 @@ def map_to_rgb(
             ],
             axis=0,
         )
-        * config.rbg_scale
+        * config.rgb_scale
     )
 
     positive_colors = post_process_colors(positive_colors)
@@ -78,7 +78,7 @@ def map_to_rgb(
             ],
             axis=0,
         )
-        * config.rbg_scale
+        * config.rgb_scale
     )
 
     negative_colors = post_process_colors(negative_colors)

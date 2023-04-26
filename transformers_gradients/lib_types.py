@@ -68,6 +68,28 @@ class ExplainFn(Protocol):
 
 
 class LibConfig(BaseSettings):
+    """
+    Configuration for libraries behaviour.
+
+    Attributes
+    ----------
+
+    prng_seed:
+        Manual seed to use for PRNGs.
+    log_level:
+        Log level for builtin logging module.
+    log_format:
+        Format for log messages.
+    return_raw_scores:
+        If set to true, explanation functions will return scores only event for plain-text inputs.
+
+
+    Examples
+    ----------
+    >>> from transformers_gradients import update_config
+    >>> update_config(prng_seed=100)
+    """
+
     prng_seed: int = Field(42, env="TG_PRNG_SEED")
     log_level: str = Field("DEBUG", env="TG_LOG_LEVEL")
     log_format: str = Field(
@@ -79,6 +101,11 @@ class LibConfig(BaseSettings):
 
 class IntGradConfig(NamedTuple):
     """
+    Hyper parameters for Integrated Gradients.
+
+    Attributes
+    ----------
+
     num_steps:
         Number of interpolated samples, which should be generated, default=10.
     baseline_fn:
@@ -96,6 +123,11 @@ class IntGradConfig(NamedTuple):
 
 class NoiseGradConfig(NamedTuple):
     """
+    Hyper parameters for NoiseGrad.
+
+    Attributes
+    ----------
+
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
     std:
@@ -107,8 +139,6 @@ class NoiseGradConfig(NamedTuple):
         Passing additional kwargs is not supported, please use partial application from functools package instead.
     noise_fn:
         Function to apply noise, default=multiplication.
-    seed:
-        PRNG seed used for noise generating distributions.
     """
 
     n: int = 10
@@ -120,6 +150,10 @@ class NoiseGradConfig(NamedTuple):
 
 class SmoothGradConfing(NamedTuple):
     """
+    Hyper parameters for SmoothGrad.
+
+    Attributes
+    ----------
     mean:
         Mean of normal distribution, from which noise applied to input embeddings is sampled, default=0.0.
     std:
@@ -131,8 +165,6 @@ class SmoothGradConfing(NamedTuple):
         Passing additional kwargs is not supported, please use partial application from functools package instead.
     noise_fn:
         Function to apply noise, default=multiplication.
-    seed:
-        PRNG seed used for noise generating distributions.
     """
 
     n: int = 10
@@ -144,6 +176,10 @@ class SmoothGradConfing(NamedTuple):
 
 class NoiseGradPlusPlusConfig(NamedTuple):
     """
+    Hyper parameters for NoiseGrad++.
+
+    Attributes
+    ----------
     mean:
         Mean of normal distribution, from which noise applied to model's weights is sampled, default=1.0.
     sg_mean:
@@ -154,16 +190,13 @@ class NoiseGradPlusPlusConfig(NamedTuple):
         Standard deviation of normal distribution, from which noise applied to input embeddings is sampled, default=0.4.
     n:
         Number of times noise is applied to weights, default=10.
-      m:
+    m:
         Number of times noise is applied to input embeddings, default=10
     explain_fn:
         Baseline explanation function. If string provided must be one of GradNorm, GradXInput, IntGrad, default=IntGrad.
         Passing additional kwargs is not supported, please use partial application from functools package instead.
     noise_fn:
         Function to apply noise, default=multiplication.
-
-    seed:
-        PRNG seed used for noise generating distributions.
     """
 
     n: int = 10
@@ -186,23 +219,30 @@ class LimeConfig(NamedTuple):
 
 class PlottingConfig(NamedTuple):
     """
+    Configuration for plotting.
+
+    Attributes
+    ----------
     ignore_special_tokens:
         If true, values in config.special_tokens will not be rendered on the heatmap.
     return_raw_html:
         If true, will return html string, by default will try to render in Jupyter.
-    color_mapping_strategy:
-        - global: RGB space is spanned by all explanations.
-        Use when you want to compare different XAI methods or hyperparameter configurations.
-        - row-wise: create separate RGB space for each explanation.
     special_tokens:
         List of tokens to ignore during rendering, if ignore_special_tokens=True, default=["[CLS]", "[SEP]", "[PAD]"].
     rgb_scale:
         Scaling factor for colors, default=1.
+    rgb_range:
+        255 or 1, as per RGC standard.
+    color_mapping_strategy:
+        - global: RGB space is spanned by all explanations. Use when you want to compare different XAI methods
+            or hyperparameter configurations.
+        - row-wise: create separate RGB space for each explanation.
+
     """
 
     ignore_special_tokens: bool = False
     return_raw_html: bool = False
     color_mapping_strategy: ColorMappingStrategy = "row-wise"
     special_tokens: List[str] = ["[CLS]", "[SEP]", "[PAD]"]
-    rbg_scale: float | Tuple[float, float, float] = 1.0
-    rbg_range: RgbRange = 255
+    rgb_scale: float | Tuple[float, float, float] = 1.0
+    rgb_range: RgbRange = 255
