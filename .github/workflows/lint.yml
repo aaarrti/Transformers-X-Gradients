@@ -17,7 +17,7 @@ jobs:
       - name: Install tox-gh
         run: pip install tox-gh
       - name: Run mypy
-        uses: aaarrti/mypy-tox-env-action@0.0.1
+        uses: aaarrti/mypy-tox-env-action@0.0.2
         with:
           checkName: Lint
         env:
