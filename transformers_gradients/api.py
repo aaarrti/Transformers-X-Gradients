@@ -220,9 +220,9 @@ class text_classification(object):
         attention_mask: tf.Tensor | None = None,
         config: NoiseGradConfig | None = None,
     ) -> List[Explanation] | tf.Tensor:
-        from transformers_gradients.tasks.text_classification import smooth_grad
+        from transformers_gradients.tasks.text_classification import noise_grad
 
-        return smooth_grad(
+        return noise_grad(
             model,
             x_batch,
             y_batch,

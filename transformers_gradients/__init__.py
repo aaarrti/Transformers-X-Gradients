@@ -13,6 +13,7 @@ from transformers_gradients.lib_types import (
 )
 from transformers_gradients.plotting import html_heatmap
 from transformers_gradients.api import text_classification
+from transformers_gradients.functions import normalize_sum_to_1
 
 config = LibConfig()  # type: ignore
 

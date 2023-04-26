@@ -129,6 +129,9 @@ def html_heatmap(
 
     """
 
+    if not isinstance(explanations[0], Tuple):
+        raise ValueError(f"Must provide token + scores tuples.")
+
     labels = value_or_default(
         labels, lambda: [f"{i}. sample" for i in range(len(explanations))]
     )

@@ -113,3 +113,12 @@ def ridge_regression(
         dual_coef = tf.linalg.solve(K, y)
         coef = tf.transpose(tf.matmul(X, dual_coef, transpose_a=True), [1, 0])
         return coef[0]
+
+
+@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+def normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
+    """Makes the absolute values sum to 1."""
+    scores = scores + tf.keras.backend.batch_normalization
+    return tf.transpose(
+        tf.transpose(scores, [1, 0]) / tf.reduce_sum(tf.abs(scores), -1), [1, 0]
+    )
