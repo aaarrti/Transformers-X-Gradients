@@ -5,13 +5,14 @@ from functools import lru_cache, partial
 from itertools import starmap
 from typing import List, Tuple, Mapping, TYPE_CHECKING
 
+import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 from jinja2 import FileSystemLoader, Environment
 from pydantic import BaseModel
 
 from transformers_gradients.lib_types import Explanation, PlottingConfig
-from transformers_gradients.utils import value_or_default, map_, mapping_to_config
+from transformers_gradients.utils import value_or_default, mapping_to_config
 
 log = logging.getLogger(__name__)
 
@@ -20,19 +21,27 @@ if TYPE_CHECKING:
     from IPython.core.display import HTML
 
 
-class ExplanationModel(BaseModel):
+class TokenSaliency(BaseModel):
     item: str
     color: Tuple[float, float, float]
 
+    @staticmethod
+    def build(item, color):
+        return TokenSaliency(item=item, color=color)
 
-class HeatmapModel(BaseModel):
+
+class HeatmapRow(BaseModel):
     label: str
-    explanation: List[ExplanationModel]
+    explanation: List[TokenSaliency]
+
+    @staticmethod
+    def build(label, explanation):
+        return HeatmapRow(label=label, explanation=explanation)
 
 
 def post_process_colors(colors: tf.Tensor) -> List[Tuple[float, float, float]]:
     colors = colors.numpy().tolist()
-    colors = map_(colors, tuple)
+    colors = list(map(tuple, colors))
     return colors
 
 
@@ -156,22 +165,26 @@ def html_heatmap(
 
     color_mapper = partial(color_mapper, config=config)
 
-    def print_token(t: str) -> str:
+    def mask_token_if_ignored(t: str) -> str:
         if not config.ignore_special_tokens:
             return t
         return "" if t in config.special_tokens else t
 
-    def to_explanation_model(token: str, ex: Explanation) -> List[ExplanationModel]:
-        tokens = map_(ex[0], print_token)
-        colors = color_mapper(ex[1])
-        return map_(
-            zip(tokens, colors), lambda i: ExplanationModel(item=i[0], color=i[1])
+    def to_token_saliencies(
+        tokens: List[str], scores: np.ndarray
+    ) -> List[TokenSaliency]:
+        tokens = map(mask_token_if_ignored, tokens)
+        colors = color_mapper(scores)
+        return list(
+            starmap(
+                TokenSaliency.build,
+                zip(tokens, colors),
+            )
         )
 
     explanations_batch = list(
         starmap(
-            lambda i: HeatmapModel(label=labels[i[0]], explanation=i[1]),
-            starmap(to_explanation_model, explanations),
+            HeatmapRow.build, zip(labels, starmap(to_token_saliencies, explanations))
         )
     )
     template = load_template()

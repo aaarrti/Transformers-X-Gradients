@@ -219,7 +219,11 @@ def integrated_gradients(
         )
         a_batch = a_batch.write(i, a)
 
-    return a_batch.concat()
+    a_batch_tensor = a_batch.concat()
+    a_batch.mark_used()
+    a_batch.close()
+
+    return a_batch_tensor
 
 
 @plain_text_inputs
@@ -414,6 +418,7 @@ def integrated_gradients_iterative(
         scores = scores.write(i, score)
 
     scores_stack = scores.stack()
+    scores.mark_used()
     scores.close()
     return scores_stack
 
