@@ -38,6 +38,8 @@ from transformers_gradients.utils import (
 
 # ----------------------------------------------------------------------------
 
+# TODO implement batch size limit as hook for all methods
+
 
 def tensor_inputs(func):
     from transformers_gradients.functions import default_attention_mask

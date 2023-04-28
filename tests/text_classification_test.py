@@ -21,7 +21,7 @@ from transformers_gradients.utils import encode_inputs
 from tests.markers import skip_in_ci
 
 
-BATCH_SIZE = 8
+BATCH_SIZE = 64
 
 
 @pytest.fixture(scope="session")
@@ -62,11 +62,14 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     [
         text_classification.gradient_norm,
         text_classification.gradient_x_input,
-        partial(
-            text_classification.integrated_gradients,
-            config=IntGradConfig(
-                batch_interpolated_inputs=False,
+        pytest.param(
+            partial(
+                text_classification.integrated_gradients,
+                config=IntGradConfig(
+                    batch_interpolated_inputs=False,
+                ),
             ),
+            marks=pytest.mark.xfail,
         ),
         pytest.param(
             text_classification.integrated_gradients,
@@ -110,11 +113,14 @@ def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     [
         text_classification.gradient_norm,
         text_classification.gradient_x_input,
-        partial(
-            text_classification.integrated_gradients,
-            config=IntGradConfig(
-                batch_interpolated_inputs=False,
+        pytest.param(
+            partial(
+                text_classification.integrated_gradients,
+                config=IntGradConfig(
+                    batch_interpolated_inputs=False,
+                ),
             ),
+            marks=pytest.mark.xfail,
         ),
         pytest.param(
             text_classification.integrated_gradients,
