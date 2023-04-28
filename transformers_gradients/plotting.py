@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache, partial
-from typing import List, Tuple
+from itertools import starmap
+from typing import List, Tuple, Mapping, TYPE_CHECKING
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -10,9 +11,13 @@ from jinja2 import FileSystemLoader, Environment
 from pydantic import BaseModel
 
 from transformers_gradients.lib_types import Explanation, PlottingConfig
-from transformers_gradients.utils import value_or_default, map_
+from transformers_gradients.utils import value_or_default, map_, mapping_to_config
 
 log = logging.getLogger(__name__)
+
+
+if TYPE_CHECKING:
+    from IPython.core.display import HTML
 
 
 class ExplanationModel(BaseModel):
@@ -106,8 +111,8 @@ def html_heatmap(
     explanations: List[Explanation],
     *,
     labels: List[str] | None = None,
-    config: PlottingConfig | None = None,
-):
+    config: PlottingConfig | Mapping[str, ...] | None = None,
+) -> str | HTML:
     """
     Creates a heatmap visualisation from list of explanations. This method should be preferred for longer
     examples. It is rendered correctly in VSCode, PyCharm, Colab, however not in GitHub or JupyterLab.
@@ -135,6 +140,7 @@ def html_heatmap(
     labels = value_or_default(
         labels, lambda: [f"{i}. sample" for i in range(len(explanations))]
     )
+    config = mapping_to_config(config, PlottingConfig)
     config = value_or_default(config, lambda: PlottingConfig())
 
     scores_only = tf.stack([i[1] for i in explanations])
@@ -155,17 +161,18 @@ def html_heatmap(
             return t
         return "" if t in config.special_tokens else t
 
-    def to_explanation_model(ex: Explanation) -> List[ExplanationModel]:
+    def to_explanation_model(token: str, ex: Explanation) -> List[ExplanationModel]:
         tokens = map_(ex[0], print_token)
         colors = color_mapper(ex[1])
         return map_(
             zip(tokens, colors), lambda i: ExplanationModel(item=i[0], color=i[1])
         )
 
-    explanations_batch = map_(explanations, to_explanation_model)
-    explanations_batch = map_(
-        enumerate(explanations_batch),
-        lambda i: HeatmapModel(label=labels[i[0]], explanation=i[1]),
+    explanations_batch = list(
+        starmap(
+            lambda i: HeatmapModel(label=labels[i[0]], explanation=i[1]),
+            starmap(to_explanation_model, explanations),
+        )
     )
     template = load_template()
     heatmap = template.render(explanations_batch=explanations_batch)
@@ -176,7 +183,7 @@ def html_heatmap(
     try:
         from IPython.core.display import HTML
 
-        return HTML(heatmap)  # noqa
+        return HTML(heatmap)
     except ModuleNotFoundError:
         log.warning("Not running in Jupyter.")
         return heatmap

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sys
 from functools import wraps, partial
-from typing import List
+from typing import List, Mapping
 
 import tensorflow as tf
+from keras.engine.data_adapter import TensorLikeDataAdapter
 import tensorflow_probability as tfp
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
@@ -31,6 +32,7 @@ from transformers_gradients.utils import (
     as_tensor,
     resolve_baseline_explain_fn,
     resolve_noise_fn,
+    mapping_to_config,
 )
 
 
@@ -152,33 +154,70 @@ def integrated_gradients(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     *,
-    config: IntGradConfig | None = None,
+    config: IntGradConfig | Mapping[str, ...] | None = None,
 ) -> tf.Tensor:
+    config = mapping_to_config(config, IntGradConfig)
     config = value_or_default(config, lambda: IntGradConfig())
-    baseline = value_or_default(config.baseline_fn, lambda: zeros_baseline)(x_batch)
-    interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
-        x=tf.cast(tf.range(config.num_steps + 1), dtype=tf.float32),
-        x_ref_min=tf.cast(0, dtype=tf.float32),
-        x_ref_max=tf.cast(config.num_steps, dtype=tf.float32),
-        y_ref=[x_batch, baseline],
-        axis=0,
-    )
+    baseline_fn = value_or_default(config.baseline_fn, lambda: zeros_baseline)
+    num_steps = tf.constant(config.num_steps)
 
-    if config.batch_interpolated_inputs:
-        return integrated_gradients_batched(
-            model,
-            interpolated_embeddings,
-            y_batch,
-            attention_mask,
-            tf.constant(config.num_steps),
+    if (
+        config.batch_size_limit >= len(x_batch) * num_steps
+        or not config.batch_interpolated_inputs
+    ):
+        baseline = baseline_fn(x_batch)
+        interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
+            x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
+            x_ref_min=tf.cast(0, dtype=tf.float32),
+            x_ref_max=tf.cast(num_steps, dtype=tf.float32),
+            y_ref=[x_batch, baseline],
+            axis=0,
         )
-    else:
-        return integrated_gradients_iterative(
-            model,
-            interpolated_embeddings,
-            y_batch,
-            attention_mask,
+
+        if config.batch_interpolated_inputs:
+            return integrated_gradients_batched(
+                model,
+                interpolated_embeddings,
+                y_batch,
+                attention_mask,
+                num_steps,
+            )
+        else:
+            return integrated_gradients_iterative(
+                model,
+                interpolated_embeddings,
+                y_batch,
+                attention_mask,
+            )
+
+    x_batch_shards = TensorLikeDataAdapter(
+        (x_batch, attention_mask),
+        y_batch,
+        batch_size=config.batch_size_limit // num_steps,
+    )
+    a_batch = tf.TensorArray(
+        dtype=x_batch.dtype,
+        size=x_batch_shards.get_size(),
+        clear_after_read=True,
+        dynamic_size=True,
+        element_shape=[None, None],
+        infer_shape=False,
+    )
+    for i, ((x, am), y) in enumerate(x_batch_shards.get_dataset()):
+        baseline = baseline_fn(x)
+        interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
+            x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
+            x_ref_min=tf.cast(0, dtype=tf.float32),
+            x_ref_max=tf.cast(num_steps, dtype=tf.float32),
+            y_ref=[x, baseline],
+            axis=0,
         )
+        a = integrated_gradients_batched(
+            model, interpolated_embeddings, y, am, num_steps
+        )
+        a_batch = a_batch.write(i, a)
+
+    return a_batch.concat()
 
 
 @plain_text_inputs
@@ -189,8 +228,9 @@ def smooth_grad(
     y_batch: tf.Tensor,
     *,
     attention_mask: tf.Tensor | None = None,
-    config: SmoothGradConfing | None = None,
+    config: SmoothGradConfing | Mapping[str, ...] | None = None,
 ) -> tf.Tensor:
+    config = mapping_to_config(config, SmoothGradConfing)
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
@@ -226,8 +266,9 @@ def noise_grad(
     y_batch: tf.Tensor,
     *,
     attention_mask: tf.Tensor | None = None,
-    config: NoiseGradConfig | None = None,
+    config: NoiseGradConfig | Mapping[str, ...] | None = None,
 ) -> tf.Tensor:
+    config = mapping_to_config(config, NoiseGradConfig)
     config = value_or_default(config, lambda: NoiseGradConfig())
     explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
     apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
@@ -271,8 +312,9 @@ def noise_grad_plus_plus(
     y_batch: tf.Tensor,
     *,
     attention_mask: tf.Tensor | None = None,
-    config: NoiseGradPlusPlusConfig | None = None,
+    config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
 ) -> tf.Tensor:
+    config = mapping_to_config(config, NoiseGradPlusPlusConfig)
     config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
     sg_config = SmoothGradConfing(
         n=config.m,
@@ -383,8 +425,9 @@ def lime(
     y_batch: tf.Tensor,
     *,
     tokenizer: PreTrainedTokenizerBase,
-    config: LimeConfig | None = None,
+    config: LimeConfig | Mapping[str, ...] | None = None,
 ) -> List[Explanation]:
+    config = mapping_to_config(config, LimeConfig)
     config = value_or_default(config, lambda: LimeConfig())
     distance_scale = tf.constant(config.distance_scale)
     mask_token_id = tokenizer.convert_tokens_to_ids(config.mask_token)

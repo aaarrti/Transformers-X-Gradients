@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import platform
 from types import ModuleType
-from typing import TypeVar, Callable, List, Tuple, Sequence, Iterable
+from typing import TypeVar, Callable, List, Tuple, Sequence, Iterable, Mapping
 
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
@@ -85,3 +85,10 @@ def resolve_noise_fn(noise_fn: str | ApplyNoiseFn) -> ApplyNoiseFn:
 
 def map_(iterable: Iterable[T], func: Callable[[T], R]) -> List[R]:
     return list(map(func, iterable))
+
+
+def mapping_to_config(config, cls):
+    if isinstance(config, Mapping):
+        return cls(**config)
+    else:
+        return config

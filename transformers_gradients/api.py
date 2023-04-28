@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import overload, List, TYPE_CHECKING
+from types import SimpleNamespace
+from typing import overload, List, TYPE_CHECKING, Mapping
 import tensorflow as tf
 
 if TYPE_CHECKING:
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 
-class text_classification(object):
+class text_classification(SimpleNamespace):
     # ----------------------------------------------------------------------------
     @staticmethod
     @overload
@@ -168,7 +169,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: IntGradConfig | None = None,
+        config: IntGradConfig | Mapping[str, ...] | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -180,7 +181,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: IntGradConfig | None = None,
+        config: IntGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -192,7 +193,7 @@ class text_classification(object):
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: IntGradConfig | None = None,
+        config: IntGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
         A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:
@@ -263,7 +264,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: SmoothGradConfing | None = None,
+        config: SmoothGradConfing | Mapping[str, ...] | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -275,7 +276,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: SmoothGradConfing | None = None,
+        config: SmoothGradConfing | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -287,7 +288,7 @@ class text_classification(object):
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: SmoothGradConfing | None = None,
+        config: SmoothGradConfing | Mapping[str, ...] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         from transformers_gradients.tasks.text_classification import smooth_grad
 
@@ -309,7 +310,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradConfig | None = None,
+        config: NoiseGradConfig | Mapping[str, ...] | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -321,7 +322,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: NoiseGradConfig | None = None,
+        config: NoiseGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -333,7 +334,7 @@ class text_classification(object):
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradConfig | None = None,
+        config: NoiseGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
         NoiseGrad is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
@@ -397,7 +398,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradPlusPlusConfig | None = None,
+        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -409,7 +410,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: NoiseGradPlusPlusConfig | None = None,
+        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -421,7 +422,7 @@ class text_classification(object):
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradPlusPlusConfig | None = None,
+        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
         NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
@@ -480,7 +481,7 @@ class text_classification(object):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: LimeConfig | None = None,
+        config: LimeConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         """
         LIME explains classifiers by returning a feature attribution score
@@ -489,9 +490,9 @@ class text_classification(object):
         1) Sample perturbation masks. First the number of masked features is sampled
             (uniform, at least 1), and then that number of features are randomly chosen
             to be masked out (without replacement).
-        2) Get predictions from the model for those perturbations. Use these as labels.
+        2) Get preMappingions from the model for those perturbations. Use these as labels.
         3) Fit a linear model to associate the input positions indicated by the binary
-            mask with the resulting predicted label.
+            mask with the resulting preMappinged label.
 
         The resulting feature importance scores are the linear model coefficients for
         the requested output class or (in case of regression) the output score.
@@ -523,7 +524,7 @@ class text_classification(object):
         References
         -------
         - https://github.com/marcotcr/lime
-        - Marco Tulio Ribeiro and Sameer Singh and Carlos Guestrin, 2016, "Why Should I Trust You?": Explaining the Predictions of Any Classifier, https://arxiv.org/abs/1602.04938
+        - Marco Tulio Ribeiro and Sameer Singh and Carlos Guestrin, 2016, "Why Should I Trust You?": Explaining the PreMappingions of Any Classifier, https://arxiv.org/abs/1602.04938
 
 
         """

@@ -118,6 +118,7 @@ class IntGradConfig(NamedTuple):
 
     num_steps: int = 10
     batch_interpolated_inputs: bool = True
+    batch_size_limit: int = 32
     baseline_fn: BaselineFn | None = None
 
 
