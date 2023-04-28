@@ -19,12 +19,12 @@ from transformers_gradients.functions import (
     ridge_regression,
 )
 from transformers_gradients.lib_types import (
-    IntGradConfig,
     NoiseGradPlusPlusConfig,
     NoiseGradConfig,
     SmoothGradConfing,
     LimeConfig,
     Explanation,
+    BaselineFn,
 )
 from transformers_gradients.utils import (
     value_or_default,
@@ -37,8 +37,6 @@ from transformers_gradients.utils import (
 
 
 # ----------------------------------------------------------------------------
-
-# TODO implement batch size limit as hook for all methods
 
 
 def tensor_inputs(func):
@@ -156,74 +154,55 @@ def integrated_gradients(
     y_batch: tf.Tensor,
     attention_mask: tf.Tensor | None = None,
     *,
-    config: IntGradConfig | Mapping[str, ...] | None = None,
+    num_steps: int = 10,
+    baseline_fn: BaselineFn | None = None,
 ) -> tf.Tensor:
-    config = mapping_to_config(config, IntGradConfig)
-    config = value_or_default(config, lambda: IntGradConfig())
-    baseline_fn = value_or_default(config.baseline_fn, lambda: zeros_baseline)
-    num_steps = tf.constant(config.num_steps)
+    baseline_fn = value_or_default(baseline_fn, lambda: zeros_baseline)
+    num_steps = tf.constant(num_steps)
 
-    if (
-        config.batch_size_limit >= len(x_batch) * num_steps
-        or not config.batch_interpolated_inputs
-    ):
-        baseline = baseline_fn(x_batch)
-        interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
-            x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
-            x_ref_min=tf.cast(0, dtype=tf.float32),
-            x_ref_max=tf.cast(num_steps, dtype=tf.float32),
-            y_ref=[x_batch, baseline],
-            axis=0,
-        )
-
-        if config.batch_interpolated_inputs:
-            return integrated_gradients_batched(
-                model,
-                interpolated_embeddings,
-                y_batch,
-                attention_mask,
-                num_steps,
-            )
-        else:
-            return integrated_gradients_iterative(
-                model,
-                interpolated_embeddings,
-                y_batch,
-                attention_mask,
-            )
-
-    x_batch_shards = TensorLikeDataAdapter(
-        (x_batch, attention_mask),
-        y_batch,
-        batch_size=config.batch_size_limit // num_steps,
+    baseline = baseline_fn(x_batch)
+    interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
+        x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
+        x_ref_min=tf.cast(0, dtype=tf.float32),
+        x_ref_max=tf.cast(num_steps, dtype=tf.float32),
+        y_ref=[baseline, x_batch],
+        axis=0,
     )
-    a_batch = tf.TensorArray(
-        dtype=x_batch.dtype,
-        size=x_batch_shards.get_size(),
+
+    interpolated_grads = tf.TensorArray(
+        size=num_steps + 1,
+        dtype=interpolated_embeddings.dtype,
         clear_after_read=True,
-        dynamic_size=True,
-        element_shape=[None, None],
-        infer_shape=False,
     )
-    for i, ((x, am), y) in enumerate(x_batch_shards.get_dataset()):
-        baseline = baseline_fn(x)
-        interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
-            x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
-            x_ref_min=tf.cast(0, dtype=tf.float32),
-            x_ref_max=tf.cast(num_steps, dtype=tf.float32),
-            y_ref=[x, baseline],
-            axis=0,
-        )
-        a = integrated_gradients_batched(
-            model, interpolated_embeddings, y, am, num_steps
-        )
-        a_batch = a_batch.write(i, a)
 
-    a_batch_tensor = a_batch.concat()
-    a_batch.mark_used()
-    a_batch.close()
+    # While at first it may seem a better idea to concatenate all inputs in one new batch,
+    # at practise in real use the batch size already is maximized,
+    # and create new axis based on num steps, will causes shapes not divisible by 8.
+    for i in tf.range(num_steps):
+        interpolation_step = interpolated_embeddings[i]
 
-    return a_batch_tensor
+        with tf.GradientTape() as tape:
+            tape.watch(interpolation_step)
+            logits = model(
+                None,
+                inputs_embeds=interpolation_step,
+                training=False,
+                attention_mask=attention_mask,
+            ).logits
+            logits = logits_for_labels(logits, y_batch)
+
+        grads = tape.gradient(logits, interpolation_step)
+        interpolated_grads = interpolated_grads.write(i, grads)
+
+    interpolated_grads_tensor = interpolated_grads.stack()
+    interpolated_grads.mark_used()
+    interpolated_grads.close()
+
+    # Compute grad norm for each interpolation step.
+    interpolated_scores = tf.linalg.norm(interpolated_grads_tensor, axis=-1)
+
+    scores = tfp.math.trapz(interpolated_scores, axis=0)
+    return scores
 
 
 @plain_text_inputs
@@ -340,87 +319,6 @@ def noise_grad_plus_plus(
         attention_mask=attention_mask,
         config=ng_config,
     )
-
-
-# ----------------------- IntGrad ------------------------
-
-
-def integrated_gradients_batched(
-    model: TFPreTrainedModel,
-    x_batch: tf.Tensor,
-    y_batch: tf.Tensor,
-    attention_mask: tf.Tensor,
-    num_steps: tf.Tensor,
-) -> tf.Tensor:
-    num_steps = tf.constant(num_steps)
-    shape = tf.shape(x_batch)
-    batch_size = shape[1]
-
-    interpolated_embeddings = tf.reshape(
-        tf.cast(x_batch, dtype=tf.float32),
-        [-1, shape[2], shape[3]],
-    )
-    interpolated_y_batch = tf.repeat(y_batch, num_steps + 1)
-    interpolated_mask = tf.repeat(attention_mask, num_steps + 1, axis=0)
-
-    with tf.GradientTape() as tape:
-        tape.watch(interpolated_embeddings)
-        logits = model(
-            None,
-            inputs_embeds=interpolated_embeddings,
-            training=False,
-            attention_mask=interpolated_mask,
-        ).logits
-        logits_for_label = logits_for_labels(logits, interpolated_y_batch)
-
-    grads = tape.gradient(logits_for_label, interpolated_embeddings)
-    grads_shape = tf.shape(grads)
-    grads = tf.reshape(
-        grads, [batch_size, num_steps + 1, grads_shape[1], grads_shape[2]]
-    )
-    return tf.linalg.norm(tfp.math.trapz(grads, axis=1), axis=-1)
-
-
-def integrated_gradients_iterative(
-    model: TFPreTrainedModel,
-    x_batch: tf.Tensor,
-    y_batch: tf.Tensor,
-    attention_mask: tf.Tensor,
-) -> tf.Tensor:
-    batch_size = tf.shape(x_batch)[1]
-    scores = tf.TensorArray(
-        x_batch.dtype,
-        size=batch_size,
-        clear_after_read=True,
-    )
-
-    for i in tf.range(batch_size):
-        interpolated_embeddings = x_batch[i]
-
-        attention_mask_i = tf.repeat(
-            tf.expand_dims(attention_mask[i], axis=0),
-            tf.shape(interpolated_embeddings)[0],
-            axis=0,
-        )
-
-        with tf.GradientTape() as tape:
-            tape.watch(interpolated_embeddings)
-            logits = model(
-                None,
-                inputs_embeds=interpolated_embeddings,
-                training=False,
-                attention_mask=attention_mask_i,
-            ).logits
-            logits_for_label = logits[:, y_batch[i]]
-
-        grads = tape.gradient(logits_for_label, interpolated_embeddings)
-        score = tf.linalg.norm(tfp.math.trapz(grads, axis=0), axis=-1)
-        scores = scores.write(i, score)
-
-    scores_stack = scores.stack()
-    scores.mark_used()
-    scores.close()
-    return scores_stack
 
 
 # ---------------------------- LIME ----------------------------

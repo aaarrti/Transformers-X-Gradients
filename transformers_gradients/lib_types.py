@@ -99,29 +99,6 @@ class LibConfig(BaseSettings):
     return_raw_scores: bool = Field(False, env="TG_RETRUN_RAW_SCORES")
 
 
-class IntGradConfig(NamedTuple):
-    """
-    Hyper parameters for Integrated Gradients.
-
-    Attributes
-    ----------
-
-    num_steps:
-        Number of interpolated samples, which should be generated, default=10.
-    baseline_fn:
-        Function used to created baseline values, by default will create zeros tensor. Alternatively, e.g.,
-        embedding for [UNK] token could be used.
-    batch_interpolated_inputs:
-        Indicates if interpolated inputs should be stacked into 1 bigger batch.
-        This speeds up the explanation, however can be very memory intensive.
-    """
-
-    num_steps: int = 10
-    batch_interpolated_inputs: bool = True
-    batch_size_limit: int = 32
-    baseline_fn: BaselineFn | None = None
-
-
 class NoiseGradConfig(NamedTuple):
     """
     Hyper parameters for NoiseGrad.

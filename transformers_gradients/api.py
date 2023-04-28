@@ -6,11 +6,11 @@ import tensorflow as tf
 if TYPE_CHECKING:
     from transformers_gradients.lib_types import (
         Explanation,
-        IntGradConfig,
         NoiseGradConfig,
         SmoothGradConfing,
         NoiseGradPlusPlusConfig,
         LimeConfig,
+        BaselineFn,
     )
     from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
@@ -169,7 +169,8 @@ class text_classification(SimpleNamespace):
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: IntGradConfig | Mapping[str, ...] | None = None,
+        num_steps: int = 10,
+        baseline_fn: BaselineFn | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -181,7 +182,8 @@ class text_classification(SimpleNamespace):
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: IntGradConfig | Mapping[str, ...] | None = None,
+        num_steps: int = 10,
+        baseline_fn: BaselineFn | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -193,7 +195,8 @@ class text_classification(SimpleNamespace):
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: IntGradConfig | Mapping[str, ...] | None = None,
+        num_steps: int = 10,
+        baseline_fn: BaselineFn | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
         A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:
@@ -224,8 +227,11 @@ class text_classification(SimpleNamespace):
             Optional attention mask to use, in case input embeddings were provided.
         tokenizer:
             Tokenizer, must be provided for plain-text inputs.
-        config:
-            Optional config specifying hyperparameters.
+        num_steps:
+            Number of interpolated samples, which should be generated, default=10.
+        baseline_fn:
+            Function used to created baseline values, by default will create zeros tensor. Alternatively, e.g.,
+            embedding for [UNK] token could be used.
 
         Returns
         -------
@@ -238,8 +244,7 @@ class text_classification(SimpleNamespace):
 
         >>> unk_token_embedding = model.embedding_lookup([model.tokenizer.unk_token_id])[0, 0]
         >>> unknown_baseline_function = tf.function(lambda x: unk_token_embedding)
-        >>> config = IntGradConfig(baseline_fn=unknown_token_baseline_function)
-        >>> text_classification.integrated_gradients(..., ..., ..., config=config)
+        >>> text_classification.integrated_gradients(..., ..., ..., baseline_fn=unknown_baseline_function)
 
         """
         from transformers_gradients.tasks.text_classification import (
@@ -252,7 +257,8 @@ class text_classification(SimpleNamespace):
             y_batch,
             tokenizer=tokenizer,
             attention_mask=attention_mask,
-            config=config,
+            num_steps=num_steps,
+            baseline_fn=baseline_fn,
         )
 
     # ----------------------------------------------------------------------------

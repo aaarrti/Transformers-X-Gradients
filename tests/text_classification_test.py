@@ -7,7 +7,6 @@ from datasets import load_dataset
 from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 
 from transformers_gradients import (
-    IntGradConfig,
     NoiseGradConfig,
     NoiseGradPlusPlusConfig,
     SmoothGradConfing,
@@ -62,19 +61,7 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     [
         text_classification.gradient_norm,
         text_classification.gradient_x_input,
-        pytest.param(
-            partial(
-                text_classification.integrated_gradients,
-                config=IntGradConfig(
-                    batch_interpolated_inputs=False,
-                ),
-            ),
-            marks=pytest.mark.xfail,
-        ),
-        pytest.param(
-            text_classification.integrated_gradients,
-            marks=skip_in_ci,
-        ),
+        text_classification.integrated_gradients,
         partial(
             text_classification.smooth_grad,
             config=SmoothGradConfing(n=2, explain_fn="GradNorm"),
@@ -91,8 +78,7 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
     ids=[
         "GradNorm",
         "GradXInput",
-        "IntGrad_iterative",
-        "IntGrad_batched",
+        "IntGrad",
         "SmoothGrad",
         "NoiseGrad",
         "NoiseGrad++",
@@ -113,19 +99,7 @@ def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     [
         text_classification.gradient_norm,
         text_classification.gradient_x_input,
-        pytest.param(
-            partial(
-                text_classification.integrated_gradients,
-                config=IntGradConfig(
-                    batch_interpolated_inputs=False,
-                ),
-            ),
-            marks=pytest.mark.xfail,
-        ),
-        pytest.param(
-            text_classification.integrated_gradients,
-            marks=skip_in_ci,
-        ),
+        text_classification.integrated_gradients,
         partial(
             text_classification.smooth_grad,
             config=SmoothGradConfing(n=2, explain_fn="GradNorm"),
@@ -142,8 +116,7 @@ def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     ids=[
         "GradNorm",
         "GradXInput",
-        "IntGrad_iterative",
-        "IntGrad_batched",
+        "IntGrad",
         "SmoothGrad",
         "NoiseGrad",
         "NoiseGrad++",
