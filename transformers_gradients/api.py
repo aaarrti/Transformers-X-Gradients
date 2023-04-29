@@ -8,7 +8,7 @@ if TYPE_CHECKING:
         Explanation,
         NoiseGradConfig,
         SmoothGradConfing,
-        NoiseGradPlusPlusConfig,
+        FusionGradConfig,
         LimeConfig,
         BaselineFn,
     )
@@ -376,7 +376,7 @@ class text_classification(SimpleNamespace):
         >>> ig_config = IntGradConfig(num_steps=22)
         >>> explain_fn = functools.partial(text_classification.integrated_gradients, config=ig_config)
         >>> ng_config = NoiseGradConfig(explain_fn=explain_fn)
-        >>> text_classification.noise_grad_plus_plus(config=ng_config)
+        >>> text_classification.noise_grad(config=ng_config)
 
         References
         -------
@@ -396,44 +396,43 @@ class text_classification(SimpleNamespace):
         )
 
     # ----------------------------------------------------------------------------
+
     @staticmethod
     @overload
-    def noise_grad_plus_plus(
+    def fusion_grad(
         model: TFPreTrainedModel,
         x_batch: tf.Tensor,
         y_batch: tf.Tensor,
         *,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
     ) -> tf.Tensor:
         ...
 
     @staticmethod
     @overload
-    def noise_grad_plus_plus(
+    def fusion_grad(
         model: TFPreTrainedModel,
         x_batch: List[str],
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase,
-        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation]:
         ...
 
     @staticmethod
-    def noise_grad_plus_plus(
+    def fusion_grad(
         model: TFPreTrainedModel,
         x_batch: tf.Tensor,
         y_batch: tf.Tensor,
         *,
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
-        config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
-        NoiseGrad++ is a state-of-the-art gradient based XAI method, which enhances baseline explanation function
-        by adding stochasticity to model's weights and model's inputs. The implementation is based
-        on https://github.com/understandable-machine-intelligence-lab/NoiseGrad/blob/master/src/noisegrad.py#L80.
+        FusionGrad is a fusion of NoiseGrad and SmoothGrad methods.
 
         Parameters
         ----------
@@ -467,10 +466,58 @@ class text_classification(SimpleNamespace):
 
         """
         from transformers_gradients.tasks.text_classification import (
-            noise_grad_plus_plus,
+            fusion_grad,
         )
 
-        return noise_grad_plus_plus(
+        return fusion_grad(
+            model,
+            x_batch,
+            y_batch,
+            tokenizer=tokenizer,
+            attention_mask=attention_mask,
+            config=config,
+        )
+
+    @staticmethod
+    @overload
+    def noise_grad_plus_plus(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        attention_mask: tf.Tensor | None = None,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
+    ) -> tf.Tensor:
+        ...
+
+    @staticmethod
+    @overload
+    def noise_grad_plus_plus(
+        model: TFPreTrainedModel,
+        x_batch: List[str],
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
+    ) -> List[Explanation]:
+        ...
+
+    @staticmethod
+    def noise_grad_plus_plus(
+        model: TFPreTrainedModel,
+        x_batch: tf.Tensor,
+        y_batch: tf.Tensor,
+        *,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        attention_mask: tf.Tensor | None = None,
+        config: FusionGradConfig | Mapping[str, ...] | None = None,
+    ) -> List[Explanation] | tf.Tensor:
+        """NoiseGrad++ is an alternative name for FusionGrad."""
+        from transformers_gradients.tasks.text_classification import (
+            fusion_grad,
+        )
+
+        return fusion_grad(
             model,
             x_batch,
             y_batch,

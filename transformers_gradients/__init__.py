@@ -2,7 +2,7 @@ import logging
 from transformers_gradients.lib_types import (
     SmoothGradConfing,
     NoiseGradConfig,
-    NoiseGradPlusPlusConfig,
+    FusionGradConfig,
     LibConfig,
     LimeConfig,
     BaselineFn,

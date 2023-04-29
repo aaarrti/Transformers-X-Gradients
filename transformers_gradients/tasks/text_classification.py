@@ -5,21 +5,18 @@ from functools import wraps, partial
 from typing import List, Mapping
 
 import tensorflow as tf
-from keras.engine.data_adapter import TensorLikeDataAdapter
 import tensorflow_probability as tfp
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
-
 
 from transformers_gradients.functions import (
     logits_for_labels,
     zeros_baseline,
-    multiplicative_noise,
     sample_masks,
     mask_tokens,
     ridge_regression,
 )
 from transformers_gradients.lib_types import (
-    NoiseGradPlusPlusConfig,
+    FusionGradConfig,
     NoiseGradConfig,
     SmoothGradConfing,
     LimeConfig,
@@ -218,8 +215,7 @@ def smooth_grad(
     config = mapping_to_config(config, SmoothGradConfing)
     config = value_or_default(config, lambda: SmoothGradConfing())
     explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
-    apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
-    apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
+    apply_noise_fn = resolve_noise_fn(config.noise_fn)  # type: ignore
 
     explanations_array = tf.TensorArray(
         x_batch.dtype,
@@ -256,8 +252,7 @@ def noise_grad(
     config = mapping_to_config(config, NoiseGradConfig)
     config = value_or_default(config, lambda: NoiseGradConfig())
     explain_fn = resolve_baseline_explain_fn(sys.modules[__name__], config.explain_fn)
-    apply_noise_fn = value_or_default(config.noise_fn, lambda: multiplicative_noise)
-    apply_noise_fn = resolve_noise_fn(apply_noise_fn)  # type: ignore
+    apply_noise_fn = resolve_noise_fn(config.noise_fn)  # type: ignore
 
     original_weights = model.weights.copy()
 
@@ -291,16 +286,16 @@ def noise_grad(
 
 @plain_text_inputs
 @tensor_inputs
-def noise_grad_plus_plus(
+def fusion_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
     y_batch: tf.Tensor,
     *,
     attention_mask: tf.Tensor | None = None,
-    config: NoiseGradPlusPlusConfig | Mapping[str, ...] | None = None,
+    config: FusionGradConfig | Mapping[str, ...] | None = None,
 ) -> tf.Tensor:
-    config = mapping_to_config(config, NoiseGradPlusPlusConfig)
-    config = value_or_default(config, lambda: NoiseGradPlusPlusConfig())
+    config = mapping_to_config(config, FusionGradConfig)
+    config = value_or_default(config, lambda: FusionGradConfig())
     sg_config = SmoothGradConfing(
         n=config.m,
         mean=config.sg_mean,
@@ -310,7 +305,10 @@ def noise_grad_plus_plus(
     )
     sg_explain_fn = partial(smooth_grad, config=sg_config)
     ng_config = NoiseGradConfig(
-        n=config.n, mean=config.mean, explain_fn=sg_explain_fn, noise_fn=config.noise_fn
+        n=config.n,
+        mean=config.mean,
+        explain_fn=sg_explain_fn,  # noqa
+        noise_fn=config.noise_fn,
     )
     return noise_grad(
         model,
@@ -340,8 +338,10 @@ def lime(
     num_samples = tf.constant(config.num_samples)
     a_batch = []
 
+    encoded_inputs = tokenizer(x_batch, return_tensors="tf", padding="longest").data
+
     for i, y in enumerate(y_batch):
-        ids = tokenizer(x_batch[i], return_tensors="tf")["input_ids"][0]
+        ids = encoded_inputs["input_ids"][i]
         masks = sample_masks(num_samples - 1, len(ids), seed=42)
         if masks.shape[0] != num_samples - 1:
             raise ValueError("Expected num_samples + 1 masks.")
@@ -350,7 +350,14 @@ def lime(
         masks = tf.concat([tf.expand_dims(all_true_mask, 0), masks], axis=0)
 
         perturbations = mask_tokens(ids, masks, mask_token_id)
-        logits = model(perturbations).logits
+
+        attention_mask = tf.repeat(
+            encoded_inputs["attention_mask"][i, tf.newaxis],
+            tf.shape(perturbations)[0],
+            axis=0,
+        )
+
+        logits = model(perturbations, attention_mask=attention_mask).logits
         outputs = logits[:, y]
         distances = tf.keras.losses.cosine_similarity(
             tf.cast(all_true_mask, dtype=tf.float32), tf.cast(masks, dtype=tf.float32)

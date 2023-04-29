@@ -8,17 +8,13 @@ from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 
 from transformers_gradients import (
     NoiseGradConfig,
-    NoiseGradPlusPlusConfig,
+    FusionGradConfig,
     SmoothGradConfing,
     LimeConfig,
     text_classification,
     ExplainFn,
 )
 from transformers_gradients.utils import encode_inputs
-
-
-from tests.markers import skip_in_ci
-
 
 BATCH_SIZE = 64
 
@@ -56,34 +52,67 @@ def sst2_batch_embeddings(sst2_batch, sst2_model, sst2_tokenizer):
 # -----------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
+text_classification_tests = pytest.mark.parametrize(
     "func",
     [
         text_classification.gradient_norm,
         text_classification.gradient_x_input,
         text_classification.integrated_gradients,
+        # ---
         partial(
             text_classification.smooth_grad,
             config=SmoothGradConfing(n=2, explain_fn="GradNorm"),
         ),
         partial(
+            text_classification.smooth_grad,
+            config=SmoothGradConfing(n=2, explain_fn="GradXInput"),
+        ),
+        partial(text_classification.smooth_grad, config=SmoothGradConfing(n=2)),
+        # ---
+        partial(
             text_classification.noise_grad,
             config=NoiseGradConfig(n=2, explain_fn="GradNorm"),
         ),
         partial(
-            text_classification.noise_grad_plus_plus,
-            config=NoiseGradPlusPlusConfig(n=2, m=2, explain_fn="GradNorm"),
+            text_classification.noise_grad,
+            config=NoiseGradConfig(n=2, explain_fn="GradXInput"),
         ),
+        partial(
+            text_classification.noise_grad,
+            config=NoiseGradConfig(n=2),
+        ),
+        # ---
+        partial(
+            text_classification.fusion_grad,
+            config=FusionGradConfig(n=2, m=2, explain_fn="GradNorm"),
+        ),
+        partial(
+            text_classification.fusion_grad,
+            config=FusionGradConfig(n=2, m=2, explain_fn="GradXInput"),
+        ),
+        partial(text_classification.fusion_grad, config=FusionGradConfig(n=2, m=2)),
     ],
     ids=[
         "GradNorm",
         "GradXInput",
         "IntGrad",
-        "SmoothGrad",
-        "NoiseGrad",
-        "NoiseGrad++",
+        # ---
+        "SmoothGrad_GradNorm",
+        "SmoothGrad_GradXInput",
+        "SmoothGrad_IntGrad",
+        # ---
+        "NoiseGrad_GradNorm",
+        "NoiseGrad_GradXInput",
+        "NoiseGrad_IntGrad",
+        # ---
+        "FusionGrad_GradNorm",
+        "FusionGrad_GradXInput",
+        "FusionGrad_IntGrad",
     ],
 )
+
+
+@text_classification_tests
 def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     explanations = func(sst2_model, *sst2_batch, tokenizer=sst2_tokenizer)
     assert len(explanations) == BATCH_SIZE
@@ -94,34 +123,7 @@ def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
         assert not np.isnan(s).any()
 
 
-@pytest.mark.parametrize(
-    "func",
-    [
-        text_classification.gradient_norm,
-        text_classification.gradient_x_input,
-        text_classification.integrated_gradients,
-        partial(
-            text_classification.smooth_grad,
-            config=SmoothGradConfing(n=2, explain_fn="GradNorm"),
-        ),
-        partial(
-            text_classification.noise_grad,
-            config=NoiseGradConfig(n=2, explain_fn="GradNorm"),
-        ),
-        partial(
-            text_classification.noise_grad_plus_plus,
-            config=NoiseGradPlusPlusConfig(n=2, m=2, explain_fn="GradNorm"),
-        ),
-    ],
-    ids=[
-        "GradNorm",
-        "GradXInput",
-        "IntGrad",
-        "SmoothGrad",
-        "NoiseGrad",
-        "NoiseGrad++",
-    ],
-)
+@text_classification_tests
 def test_embeddings(func: ExplainFn, sst2_model, sst2_batch_embeddings, sst2_tokenizer):
     explanations = func(
         sst2_model,

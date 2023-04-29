@@ -152,9 +152,9 @@ class SmoothGradConfing(NamedTuple):
     noise_fn: ApplyNoiseFn = "multiplicative"
 
 
-class NoiseGradPlusPlusConfig(NamedTuple):
+class FusionGradConfig(NamedTuple):
     """
-    Hyper parameters for NoiseGrad++.
+    Hyper parameters for FusionGrad.
 
     Attributes
     ----------
