@@ -157,10 +157,11 @@ def integrated_gradients(
     num_steps = tf.constant(num_steps)
 
     baseline = baseline_fn(x_batch)
+    dtype = x_batch.dtype
     interpolated_embeddings = tfp.math.batch_interp_regular_1d_grid(
-        x=tf.cast(tf.range(num_steps + 1), dtype=tf.float32),
-        x_ref_min=tf.cast(0, dtype=tf.float32),
-        x_ref_max=tf.cast(num_steps, dtype=tf.float32),
+        x=tf.cast(tf.range(num_steps + 1), dtype=dtype),
+        x_ref_min=tf.cast(0, dtype=dtype),
+        x_ref_max=tf.cast(num_steps, dtype=dtype),
         y_ref=[baseline, x_batch],
         axis=0,
     )
@@ -226,7 +227,7 @@ def smooth_grad(
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
-        return apply_noise_fn(x, noise)
+        return apply_noise_fn(x, tf.cast(noise, dtype=x.dtype))
 
     for n in tf.range(config.n):
         noisy_x = noise_fn(x_batch)
@@ -265,7 +266,7 @@ def noise_grad(
 
     def noise_fn(x):
         noise = noise_dist.sample(tf.shape(x))
-        return apply_noise_fn(x, noise)
+        return apply_noise_fn(x, tf.cast(noise, dtype=x.dtype))
 
     for n in tf.range(config.n):
         noisy_weights = tf.nest.map_structure(
