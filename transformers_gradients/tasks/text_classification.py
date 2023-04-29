@@ -10,7 +10,6 @@ from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 from transformers_gradients.functions import (
     logits_for_labels,
-    zeros_baseline,
     sample_masks,
     mask_tokens,
     ridge_regression,
@@ -154,7 +153,7 @@ def integrated_gradients(
     num_steps: int = 10,
     baseline_fn: BaselineFn | None = None,
 ) -> tf.Tensor:
-    baseline_fn = value_or_default(baseline_fn, lambda: zeros_baseline)
+    baseline_fn = value_or_default(baseline_fn, lambda: tf.zeros_like)
     num_steps = tf.constant(num_steps)
 
     baseline = baseline_fn(x_batch)

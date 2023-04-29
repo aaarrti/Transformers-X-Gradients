@@ -4,18 +4,6 @@ from transformers_gradients.utils import is_xla_compatible_platform
 
 
 @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def multiplicative_noise(arr: tf.Tensor, noise: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("multiplicative_noise"):
-        return tf.multiply(arr, noise)
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def additive_noise(arr: tf.Tensor, noise: tf.Tensor):
-    with tf.name_scope("additive_noise"):
-        return tf.add(arr, noise)
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
 def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
     # Matrix with indexes like [ [0,y_0], [1, y_1], ...]
     with tf.name_scope("logits_for_labels"):
@@ -37,12 +25,6 @@ def default_attention_mask(x_batch: tf.Tensor) -> tf.Tensor:
         return tf.ones(
             tf.gather(tf.shape(x_batch), tf.constant([0, 1])), dtype=tf.int32
         )
-
-
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def zeros_baseline(arr: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("zeros_baseline"):
-        return tf.zeros_like(arr)
 
 
 # @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())

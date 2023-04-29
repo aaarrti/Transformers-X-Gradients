@@ -71,12 +71,10 @@ def resolve_noise_fn(noise_fn: str | ApplyNoiseFn) -> ApplyNoiseFn:
     if isinstance(noise_fn, Callable):  # type: ignore
         return noise_fn  # type: ignore
 
-    from transformers_gradients.functions import additive_noise, multiplicative_noise
-
     if noise_fn == "multiplicative":
-        return multiplicative_noise
+        return tf.multiply
     if noise_fn == "additive":
-        return additive_noise
+        return tf.add
 
     raise ValueError(
         f"Unknown noise_fn: {noise_fn}, suported are additive, multiplicative"
