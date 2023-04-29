@@ -38,6 +38,9 @@ def update_config(**kwargs):
     )
 
 
+update_config()
+
+
 gpus = tf.config.list_physical_devices("GPU")
 if len(gpus) > 0:
     gpu_details = tf.config.experimental.get_device_details(gpus[0])
