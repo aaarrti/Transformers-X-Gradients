@@ -11,6 +11,7 @@ from transformers_gradients.utils import is_xla_compatible_platform
 def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
     # Matrix with indexes like [ [0,y_0], [1, y_1], ...]
     with tf.name_scope("logits_for_labels"):
+        logits = tf.cast(logits, tf.float16)
         indexes = tf.transpose(
             tf.stack(
                 [
@@ -58,9 +59,9 @@ def ridge_regression(
 ) -> tf.Tensor:
     # Preprocess data
     with tf.name_scope("ridge_regression"):
-        X = tf.cast(X, dtype=tf.float64)
-        y = tf.cast(y, dtype=tf.float64)
-        sample_weight = tf.cast(sample_weight, dtype=tf.float64)
+        X = tf.cast(X, dtype=tf.float16)
+        y = tf.cast(y, dtype=tf.float16)
+        sample_weight = tf.cast(sample_weight, dtype=tf.float16)
         X_offset = weighted_average(
             X, axis=0, weights=tf.expand_dims(sample_weight, axis=1)
         )
@@ -93,7 +94,7 @@ def ridge_regression(
 )
 def normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
     """Makes the absolute values sum to 1."""
-    scores = scores + tf.keras.backend.batch_normalization
+    scores = scores + tf.keras.backend.epsilon
     return tf.transpose(
         tf.transpose(scores, [1, 0]) / tf.reduce_sum(tf.abs(scores), -1), [1, 0]
     )

@@ -104,7 +104,7 @@ def map_to_rgb(
         else:
             colors.append(negative_colors[i])
 
-    return tf.round(colors)
+    return colors
 
 
 @lru_cache(maxsize=None)

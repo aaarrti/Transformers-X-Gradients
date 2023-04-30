@@ -76,9 +76,9 @@ def enable_mixed_precision():
 
             log.info("Enabled mixed precision.")
             mixed_precision.set_global_policy("mixed_float16")
-            tf.config.optimizer.set_experimental_options(
-                dict(auto_mixed_precision=True)
-            )
+            # tf.config.optimizer.set_experimental_options(
+            #    dict(auto_mixed_precision=True)
+            # )
 
 
 enable_mixed_precision()

@@ -17,11 +17,13 @@ from pydantic import BaseSettings, Field
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
 BaselineFn = Callable[[tf.Tensor], tf.Tensor]
+# make extension type ?
 Explanation = Tuple[List[str], tf.Tensor]
 ApplyNoiseFn = Union[
     Callable[[tf.Tensor, tf.Tensor], tf.Tensor], Literal["additive", "multiplicative"]
 ]
 BaselineExplainFn = Literal["GradNorm", "GradXInput", "IntGrad"]
+# remove ?
 DistanceFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
 KernelFn = Callable[[tf.Tensor], tf.Tensor]
 ColorMappingStrategy = Literal["global", "row-wise"]

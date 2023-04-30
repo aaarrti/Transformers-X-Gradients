@@ -340,16 +340,41 @@ def lime(
 
     encoded_inputs = tokenizer(x_batch, return_tensors="tf", padding="longest").data
 
+    def sample_masks(num_features: int):
+        with tf.name_scope("sample_masks"):
+            positions = tf.tile(
+                tf.expand_dims(tf.range(num_features, dtype=tf.int32), 0),
+                (num_samples, 1),
+            )
+            permutations = tf.vectorized_map(tf.random.shuffle, positions)
+            num_disabled_features = tf.random.uniform(
+                minval=1,
+                maxval=num_features + 1,
+                shape=tf.shape(positions),
+                dtype=tf.int32,
+            )
+            return tf.math.greater_equal(permutations, num_disabled_features)
+
+    def mask_tokens(token_ids: tf.Tensor, mmasks: tf.Tensor) -> tf.Tensor:
+        with tf.name_scope("mask_tokens"):
+            ids_batch = tf.repeat(
+                tf.expand_dims(token_ids, 0), tf.shape(mmasks)[0], axis=0
+            )
+            mmasks = tf.cast(mmasks, tf.int32)
+            return (ids_batch * (tf.ones_like(mmasks) - mmasks)) + (
+                mmasks * mask_token_id
+            )
+
     for i, y in enumerate(y_batch):
         ids = encoded_inputs["input_ids"][i]
-        masks = sample_masks(num_samples - 1, len(ids), seed=42)
+        masks = sample_masks(num_samples - 1)
         if masks.shape[0] != num_samples - 1:
             raise ValueError("Expected num_samples + 1 masks.")
 
         all_true_mask = tf.ones_like(masks[0], dtype=tf.bool)
         masks = tf.concat([tf.expand_dims(all_true_mask, 0), masks], axis=0)
 
-        perturbations = mask_tokens(ids, masks, mask_token_id)
+        perturbations = mask_tokens(ids, masks)
 
         attention_mask = tf.repeat(
             encoded_inputs["attention_mask"][i, tf.newaxis],
@@ -370,30 +395,3 @@ def lime(
         a_batch.append((tokenizer.convert_ids_to_tokens(ids), score))
 
     return a_batch
-
-
-# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def sample_masks(num_samples: int, num_features: int, seed: int = 42):
-    with tf.name_scope("sample_masks"):
-        positions = tf.tile(
-            tf.expand_dims(tf.range(num_features, dtype=tf.int32), 0), (num_samples, 1)
-        )
-        permutations = tf.vectorized_map(tf.random.shuffle, positions)
-        num_disabled_features = tf.random.uniform(
-            minval=1,
-            maxval=num_features + 1,
-            shape=tf.shape(positions),
-            seed=seed,
-            dtype=tf.int32,
-        )
-        return tf.math.greater_equal(permutations, num_disabled_features)
-
-
-# @tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
-def mask_tokens(
-    token_ids: tf.Tensor, masks: tf.Tensor, mask_token_id: tf.Tensor
-) -> tf.Tensor:
-    with tf.name_scope("mask_tokens"):
-        ids_batch = tf.repeat(tf.expand_dims(token_ids, 0), tf.shape(masks)[0], axis=0)
-        masks = tf.cast(masks, tf.int32)
-        return (ids_batch * (tf.ones_like(masks) - masks)) + (masks * mask_token_id)
