@@ -1,4 +1,5 @@
 import logging
+import tensorflow as tf
 from transformers_gradients.lib_types import (
     SmoothGradConfing,
     NoiseGradConfig,
@@ -15,11 +16,9 @@ from transformers_gradients.lib_types import (
 from transformers_gradients.plotting import html_heatmap
 from transformers_gradients.api import text_classification
 from transformers_gradients.functions import normalize_sum_to_1
-import tensorflow as tf
-from keras import mixed_precision
+from transformers_gradients.utils import is_xla_compatible_platform
 
 log = logging.getLogger(__name__)
-
 config = LibConfig()  # type: ignore
 
 
@@ -40,7 +39,7 @@ def update_config(**kwargs):
 
 
 update_config()
-from transformers_gradients.utils import is_xla_compatible_platform
+
 
 if is_xla_compatible_platform():
     tf.config.optimizer.set_jit("autoclustering")
@@ -62,18 +61,24 @@ if is_xla_compatible_platform():
 #    )
 # )
 
-gpus = tf.config.list_physical_devices("GPU")
-if len(gpus) > 0:
-    gpu_details = tf.config.experimental.get_device_details(gpus[0])
-    supports_mixed_precision = False
-    name = gpu_details.get("device_name", "Unknown GPU")
-    cc = gpu_details.get("compute_capability")
-    if cc:
-        device_str = f"{name}, compute capability {cc[0]}.{cc[1]}"
-        if cc >= (7, 0):
-            supports_mixed_precision = True
 
-    if supports_mixed_precision:
-        log.info("Enabled mixed precision.")
-        mixed_precision.set_global_policy("mixed_float16")
-        # tf.config.optimizer.set_experimental_options(dict(auto_mixed_precision=True))
+def enable_mixed_precision():
+    gpus = tf.config.list_physical_devices("GPU")
+    if len(gpus) > 0:
+        gpu_details = tf.config.experimental.get_device_details(gpus[0])
+        supports_mixed_precision = False
+        cc = gpu_details.get("compute_capability")
+        if cc:
+            supports_mixed_precision = cc >= (7, 0)
+
+        if supports_mixed_precision:
+            from keras import mixed_precision
+
+            log.info("Enabled mixed precision.")
+            mixed_precision.set_global_policy("mixed_float16")
+            tf.config.optimizer.set_experimental_options(
+                dict(auto_mixed_precision=True)
+            )
+
+
+enable_mixed_precision()

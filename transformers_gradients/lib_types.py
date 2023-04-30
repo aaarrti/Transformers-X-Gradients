@@ -96,7 +96,7 @@ class LibConfig(BaseSettings):
         "%(asctime)s:[%(filename)s:%(lineno)s->%(funcName)s()]:%(levelname)s: %(message)s",
         env="TG_LOG_FORMAT",
     )
-    return_raw_scores: bool = Field(False, env="TG_RETRUN_RAW_SCORES")
+    return_raw_scores: bool = Field(False, env="TG_RETURN_RAW_SCORES")
 
 
 class NoiseGradConfig(NamedTuple):
