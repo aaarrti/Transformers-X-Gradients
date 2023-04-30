@@ -235,6 +235,7 @@ def smooth_grad(
         explanations_array = explanations_array.write(n, explanation)
 
     scores = tf.reduce_mean(explanations_array.stack(), axis=0)
+    explanations_array.mark_used()
     explanations_array.close()
     return scores
 
@@ -279,6 +280,7 @@ def noise_grad(
         explanations_array = explanations_array.write(n, explanation)
 
     scores = tf.reduce_mean(explanations_array.stack(), axis=0)
+    explanations_array.mark_used()
     explanations_array.close()
     model.set_weights(original_weights)
     return scores

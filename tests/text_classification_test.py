@@ -14,16 +14,21 @@ from transformers_gradients import (
     text_classification,
     ExplainFn,
 )
-from transformers_gradients.utils import encode_inputs
+from transformers_gradients.utils import encode_inputs, is_xla_compatible_platform
 
 BATCH_SIZE = 64
 
 
 @pytest.fixture(scope="session")
 def sst2_model():
-    return TFAutoModelForSequenceClassification.from_pretrained(
+    model = TFAutoModelForSequenceClassification.from_pretrained(
         "distilbert-base-uncased-finetuned-sst-2-english"
     )
+    model._jit_compile = is_xla_compatible_platform()
+    model.__call__ = tf.function(
+        model.__call__, reduce_retracing=True, jit_compile=is_xla_compatible_platform()
+    )
+    return model
 
 
 @pytest.fixture(scope="session")

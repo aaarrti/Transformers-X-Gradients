@@ -39,7 +39,27 @@ def update_config(**kwargs):
 
 
 update_config()
+from transformers_gradients.utils import is_xla_compatible_platform
 
+if is_xla_compatible_platform():
+    tf.config.optimizer.set_jit("autoclustering")
+# tf.config.optimizer.set_experimental_options(
+#    dict(
+#        layout_optimizer=True,
+#        constant_folding=True,
+#        shape_optimization=True,
+#        remapping=True,
+#        arithmetic_optimization=True,
+#        dependency_optimization=True,
+#        loop_optimization=True,
+#        function_optimization=True,
+#        debug_stripper=True,
+#        scoped_allocator_optimization=True,
+#        # this one breaks
+#        # pin_to_host_optimization=True,
+#        implementation_selector=True,
+#    )
+# )
 
 gpus = tf.config.list_physical_devices("GPU")
 if len(gpus) > 0:
@@ -55,3 +75,4 @@ if len(gpus) > 0:
     if supports_mixed_precision:
         log.info("Enabled mixed precision.")
         mixed_precision.set_global_policy("mixed_float16")
+        # tf.config.optimizer.set_experimental_options(dict(auto_mixed_precision=True))

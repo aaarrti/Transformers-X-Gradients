@@ -3,7 +3,11 @@ import tensorflow as tf
 from transformers_gradients.utils import is_xla_compatible_platform
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+@tf.function(
+    reduce_retracing=True,
+    jit_compile=is_xla_compatible_platform(),
+    experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
+)
 def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
     # Matrix with indexes like [ [0,y_0], [1, y_1], ...]
     with tf.name_scope("logits_for_labels"):
@@ -19,7 +23,11 @@ def logits_for_labels(logits: tf.Tensor, y_batch: tf.Tensor) -> tf.Tensor:
         return tf.gather_nd(logits, indexes)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+@tf.function(
+    reduce_retracing=True,
+    jit_compile=is_xla_compatible_platform(),
+    experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
+)
 def default_attention_mask(x_batch: tf.Tensor) -> tf.Tensor:
     with tf.name_scope("default_attention_mask"):
         return tf.ones(
@@ -54,13 +62,21 @@ def mask_tokens(
         return (ids_batch * (tf.ones_like(masks) - masks)) + (masks * mask_token_id)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+@tf.function(
+    reduce_retracing=True,
+    jit_compile=is_xla_compatible_platform(),
+    experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
+)
 def weighted_average(x: tf.Tensor, weights: tf.Tensor, axis=None) -> tf.Tensor:
     with tf.name_scope("weighted_average"):
         return tf.reduce_sum(weights * x, axis=axis) / tf.reduce_sum(weights, axis=axis)
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+@tf.function(
+    reduce_retracing=True,
+    jit_compile=is_xla_compatible_platform(),
+    experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
+)
 def ridge_regression(
     X: tf.Tensor,
     y: tf.Tensor,
@@ -97,7 +113,11 @@ def ridge_regression(
         return coef[0]
 
 
-@tf.function(reduce_retracing=True, jit_compile=is_xla_compatible_platform())
+@tf.function(
+    reduce_retracing=True,
+    jit_compile=is_xla_compatible_platform(),
+    experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
+)
 def normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
     """Makes the absolute values sum to 1."""
     scores = scores + tf.keras.backend.batch_normalization
