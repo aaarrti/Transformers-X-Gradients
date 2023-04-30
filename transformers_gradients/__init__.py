@@ -10,6 +10,7 @@ from transformers_gradients.lib_types import (
     ExplainFn,
     ApplyNoiseFn,
     PlottingConfig,
+    NoiseGradPlusPlusConfig,
 )
 from transformers_gradients.plotting import html_heatmap
 from transformers_gradients.api import text_classification

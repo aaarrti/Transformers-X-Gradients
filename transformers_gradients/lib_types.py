@@ -187,6 +187,10 @@ class FusionGradConfig(NamedTuple):
     noise_fn: ApplyNoiseFn = "multiplicative"
 
 
+# Alias to FusionGrad.
+NoiseGradPlusPlusConfig = FusionGradConfig
+
+
 class LimeConfig(NamedTuple):
     alpha: float = 1.0
     num_samples: int = 1000
