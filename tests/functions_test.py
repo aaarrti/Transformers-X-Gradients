@@ -32,7 +32,7 @@ def test_ridge_regression(ridge_inputs, ridge_expected):
 
 
 def test_normalise_scores(explanation_tensor):
-    result = normalize_sum_to_1(explanation_tensor)
+    result = normalize_sum_to_1(tf.cast(explanation_tensor, tf.float16))
     assert_numerics(result)
     ex_sum = tf.reduce_sum(result, axis=1)
     tf.debugging.assert_near(ex_sum, 1.0)

@@ -56,7 +56,7 @@ update_config()
 if is_xla_compatible_platform():
     tf.config.optimizer.set_jit("autoclustering")
 
-if is_mixed_precision_supported_device():
+if is_mixed_precision_supported_device() and not config.disable_mixed_precision:
     from keras import mixed_precision
 
     log.info("Enabled mixed precision.")
