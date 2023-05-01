@@ -30,7 +30,7 @@ def update_config(
     return_raw_scores: bool = False,
     normalize_scores: bool = False,
     run_with_profiler: bool = False,
-    disable_mixed_precision: bool = False,
+    enable_mixed_precision: bool = False,
 ):
     global config
 
@@ -41,7 +41,7 @@ def update_config(
         return_raw_scores=return_raw_scores,
         normalize_scores=normalize_scores,
         run_with_profiler=run_with_profiler,
-        disable_mixed_precision=disable_mixed_precision,
+        enable_mixed_precision=enable_mixed_precision,
     )
     tf.random.set_seed(config.prng_seed)
     tf.experimental.numpy.random.seed(config.prng_seed)
@@ -56,11 +56,12 @@ update_config()
 if is_xla_compatible_platform():
     tf.config.optimizer.set_jit("autoclustering")
 
-if is_mixed_precision_supported_device() and not config.disable_mixed_precision:
-    from keras import mixed_precision
 
-    log.info("Enabled mixed precision.")
-    mixed_precision.set_global_policy("mixed_float16")
+# if is_mixed_precision_supported_device() and not config.enable_mixed_precision:
+#     from keras import mixed_precision
+#
+#     log.info("Enabled mixed precision.")
+#     mixed_precision.set_global_policy("mixed_float16")
 
 # tf.config.optimizer.set_experimental_options(
 #    dict(

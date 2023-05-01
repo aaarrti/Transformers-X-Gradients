@@ -96,7 +96,7 @@ class LibConfig(BaseSettings):
     return_raw_scores: bool = Field(False, env="TG_RETURN_RAW_SCORES")
     normalize_scores: bool = Field(False, env="TG_NORMALISE_SCORES")
     run_with_profiler: bool = Field(False, env="TG_RUN_WITH_PROFILER")
-    disable_mixed_precision: bool = Field(False, env="TG_DISABLE_MIXED_PRECISION")
+    enable_mixed_precision: bool = Field(False, env="TG_DISABLE_MIXED_PRECISION")
 
 
 class NoiseGradConfig(NamedTuple):
