@@ -1,6 +1,5 @@
 from functools import partial
 
-import numpy as np
 import pytest
 import tensorflow as tf
 from datasets import load_dataset
@@ -12,9 +11,10 @@ from transformers_gradients import (
     SmoothGradConfing,
     LimeConfig,
     text_classification,
-    ExplainFn,
+    is_xla_compatible_platform,
 )
-from transformers_gradients.utils import encode_inputs, is_xla_compatible_platform
+from transformers_gradients.lib_types import ExplainFn
+from transformers_gradients.utils import encode_inputs
 
 BATCH_SIZE = 64
 
@@ -121,11 +121,11 @@ text_classification_tests = pytest.mark.parametrize(
 def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
     explanations = func(sst2_model, *sst2_batch, tokenizer=sst2_tokenizer)
     assert len(explanations) == BATCH_SIZE
-    for t, s in explanations:
-        assert isinstance(t, list)
-        assert [isinstance(i, str) for i in t]
-        assert isinstance(s, tf.Tensor)
-        assert not np.isnan(s).any()
+    for e in explanations:
+        assert isinstance(e.tokens, tuple)
+        assert [isinstance(i, str) for i in e.tokens]
+        assert isinstance(e.scores, tf.Tensor)
+        tf.debugging.check_numerics(e.scores, "NaNs not allowed")
 
 
 @text_classification_tests
@@ -138,9 +138,8 @@ def test_embeddings(func: ExplainFn, sst2_model, sst2_batch_embeddings, sst2_tok
         tokenizer=sst2_tokenizer,
     )
     assert len(explanations) == BATCH_SIZE
-    for s in explanations:
-        assert isinstance(s, tf.Tensor)
-        assert not np.isnan(s).any()
+    assert isinstance(explanations, tf.Tensor)
+    tf.debugging.check_numerics(explanations, "NaNs not allowed")
 
 
 def test_lime(sst2_model, sst2_batch, sst2_tokenizer):
@@ -151,8 +150,8 @@ def test_lime(sst2_model, sst2_batch, sst2_tokenizer):
         config=LimeConfig(num_samples=10),
     )
     assert len(explanations) == BATCH_SIZE
-    for t, s in explanations:
-        assert isinstance(t, list)
-        assert [isinstance(i, str) for i in t]
-        assert isinstance(s, tf.Tensor)
-        assert not np.isnan(s).any()
+    for e in explanations:
+        assert isinstance(e.tokens, tuple)
+        assert [isinstance(i, str) for i in e.tokens]
+        assert isinstance(e.scores, tf.Tensor)
+        tf.debugging.check_numerics(explanations, "NaNs not allowed")

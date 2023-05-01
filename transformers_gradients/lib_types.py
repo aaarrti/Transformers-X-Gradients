@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import (
-    Callable,
     Protocol,
     overload,
     runtime_checkable,
@@ -9,25 +8,21 @@ from typing import (
     List,
     Literal,
     NamedTuple,
-    Union,
 )
 
 import tensorflow as tf
 from pydantic import BaseSettings, Field
 from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
-BaselineFn = Callable[[tf.Tensor], tf.Tensor]
-# make extension type ?
-Explanation = Tuple[List[str], tf.Tensor]
-ApplyNoiseFn = Union[
-    Callable[[tf.Tensor, tf.Tensor], tf.Tensor], Literal["additive", "multiplicative"]
-]
+ApplyNoiseFn = Literal["additive", "multiplicative"]
 BaselineExplainFn = Literal["GradNorm", "GradXInput", "IntGrad"]
-# remove ?
-DistanceFn = Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
-KernelFn = Callable[[tf.Tensor], tf.Tensor]
 ColorMappingStrategy = Literal["global", "row-wise"]
 RgbRange = Literal[1, 255]
+
+
+class Explanation(tf.experimental.ExtensionType):
+    tokens: Tuple[str, ...]
+    scores: tf.Tensor
 
 
 @runtime_checkable
@@ -99,6 +94,9 @@ class LibConfig(BaseSettings):
         env="TG_LOG_FORMAT",
     )
     return_raw_scores: bool = Field(False, env="TG_RETURN_RAW_SCORES")
+    normalize_scores: bool = Field(False, env="TG_NORMALISE_SCORES")
+    run_with_profiler: bool = Field(False, env="TG_RUN_WITH_PROFILER")
+    disable_mixed_precision: bool = Field(False, env="TG_DISABLE_MIXED_PRECISION")
 
 
 class NoiseGradConfig(NamedTuple):

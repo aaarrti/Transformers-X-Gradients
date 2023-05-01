@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from functools import wraps, partial
-from typing import List, Mapping
+from typing import List, Mapping, Callable
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -18,7 +18,6 @@ from transformers_gradients.lib_types import (
     SmoothGradConfing,
     LimeConfig,
     Explanation,
-    BaselineFn,
 )
 from transformers_gradients.utils import (
     value_or_default,
@@ -31,6 +30,20 @@ from transformers_gradients.utils import (
 
 
 # ----------------------------------------------------------------------------
+
+
+def normalise_scores(func):
+    from transformers_gradients.functions import normalize_sum_to_1
+    from transformers_gradients import config
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        scores = func(*args, **kwargs)
+        if config.normalize_scores:
+            scores = normalize_sum_to_1(scores)
+        return scores
+
+    return wrapper
 
 
 def tensor_inputs(func):
@@ -93,7 +106,9 @@ def plain_text_inputs(func):
         if config.return_raw_scores:
             return scores
         return [
-            (tokenizer.convert_ids_to_tokens(list(i)), j)  # type: ignore
+            Explanation(
+                tokens=tuple(tokenizer.convert_ids_to_tokens(list(i))), scores=j
+            )  # type: ignore
             for i, j in zip(input_ids, scores)
         ]
 
@@ -105,6 +120,7 @@ def plain_text_inputs(func):
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def gradient_norm(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -124,6 +140,7 @@ def gradient_norm(
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def gradient_x_input(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -142,6 +159,7 @@ def gradient_x_input(
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def integrated_gradients(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -149,7 +167,7 @@ def integrated_gradients(
     attention_mask: tf.Tensor | None = None,
     *,
     num_steps: int = 10,
-    baseline_fn: BaselineFn | None = None,
+    baseline_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
 ) -> tf.Tensor:
     baseline_fn = value_or_default(baseline_fn, lambda: tf.zeros_like)
     num_steps = tf.constant(num_steps)
@@ -202,6 +220,7 @@ def integrated_gradients(
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def smooth_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -240,6 +259,7 @@ def smooth_grad(
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def noise_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -286,6 +306,7 @@ def noise_grad(
 
 @plain_text_inputs
 @tensor_inputs
+@normalise_scores
 def fusion_grad(
     model: TFPreTrainedModel,
     x_batch: tf.Tensor,
@@ -330,13 +351,15 @@ def lime(
     tokenizer: PreTrainedTokenizerBase,
     config: LimeConfig | Mapping[str, ...] | None = None,
 ) -> List[Explanation]:
+    from transformers_gradients import config as lib_config
+    from transformers_gradients.functions import normalize_sum_to_1
+
     config = mapping_to_config(config, LimeConfig)
     config = value_or_default(config, lambda: LimeConfig())
     distance_scale = tf.constant(config.distance_scale)
     mask_token_id = tokenizer.convert_tokens_to_ids(config.mask_token)
 
     num_samples = tf.constant(config.num_samples)
-    a_batch = []
 
     encoded_inputs = tokenizer(x_batch, return_tensors="tf", padding="longest").data
 
@@ -365,6 +388,10 @@ def lime(
                 mmasks * mask_token_id
             )
 
+    scores_array = tf.TensorArray(
+        dtype=tf.float32, size=len(x_batch), clear_after_read=True
+    )
+
     for i, y in enumerate(y_batch):
         ids = encoded_inputs["input_ids"][i]
         masks = sample_masks(num_samples - 1)
@@ -392,6 +419,20 @@ def lime(
             length_scale=25.0
         ).apply(distances[:, tf.newaxis], tf.zeros_like(distances[:, tf.newaxis]))
         score = ridge_regression(masks, outputs, sample_weight=distances)
-        a_batch.append((tokenizer.convert_ids_to_tokens(ids), score))
+        scores_array = scores_array.write(i, score)
+
+    scores_batch = scores_array.concat()
+    scores_array.mark_used()
+    scores_array.close()
+
+    if lib_config.normalize_scores:
+        scores_batch = normalize_sum_to_1(scores_batch)
+    if lib_config.return_raw_scores:
+        return scores_batch
+
+    a_batch = [
+        Explanation(tokens=tuple(tokenizer.convert_ids_to_tokens(i)), scores=j)
+        for i, j in zip(encoded_inputs["input_ids"], scores_batch)
+    ]
 
     return a_batch

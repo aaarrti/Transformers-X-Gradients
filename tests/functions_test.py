@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from sklearn import linear_model
+import tensorflow as tf
 
 from transformers_gradients.functions import ridge_regression
 
@@ -26,5 +27,5 @@ def test_ridge_regression(ridge_inputs, ridge_expected):
         ridge_inputs[0], ridge_inputs[1], sample_weight=ridge_inputs[2]
     )
     assert result.shape == ridge_expected.shape
-    assert not np.isnan(result).any()
-    assert np.allclose(result, ridge_expected, atol=0.01)
+    tf.debugging.check_numerics(result)
+    tf.debugging.assert_near(result, ridge_expected, atol=0.01)

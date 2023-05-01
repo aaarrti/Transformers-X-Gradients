@@ -1,16 +1,16 @@
 from __future__ import annotations
 from types import SimpleNamespace
-from typing import overload, List, TYPE_CHECKING, Mapping
-import tensorflow as tf
+from typing import overload, List, TYPE_CHECKING, Mapping, Callable
+
 
 if TYPE_CHECKING:
+    import tensorflow as tf
     from transformers_gradients.lib_types import (
         Explanation,
         NoiseGradConfig,
         SmoothGradConfing,
         FusionGradConfig,
         LimeConfig,
-        BaselineFn,
     )
     from transformers import TFPreTrainedModel, PreTrainedTokenizerBase
 
@@ -170,7 +170,7 @@ class text_classification(SimpleNamespace):
         *,
         attention_mask: tf.Tensor | None = None,
         num_steps: int = 10,
-        baseline_fn: BaselineFn | None = None,
+        baseline_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
     ) -> tf.Tensor:
         ...
 
@@ -183,7 +183,7 @@ class text_classification(SimpleNamespace):
         *,
         tokenizer: PreTrainedTokenizerBase,
         num_steps: int = 10,
-        baseline_fn: BaselineFn | None = None,
+        baseline_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
     ) -> List[Explanation]:
         ...
 
@@ -196,7 +196,7 @@ class text_classification(SimpleNamespace):
         tokenizer: PreTrainedTokenizerBase | None = None,
         attention_mask: tf.Tensor | None = None,
         num_steps: int = 10,
-        baseline_fn: BaselineFn | None = None,
+        baseline_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
     ) -> List[Explanation] | tf.Tensor:
         """
         A baseline Integrated Gradients text-classification explainer. Integrated Gradients explanation algorithm is:

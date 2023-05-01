@@ -2,7 +2,6 @@ import pickle
 
 import pytest
 import tensorflow as tf  # noqa
-import numpy as np
 from transformers_gradients.lib_types import PlottingConfig
 from transformers_gradients.plotting import html_heatmap, map_to_rgb
 
@@ -38,8 +37,8 @@ def test_heatmap(a_batch):
             [
                 (255, 0, 0),
                 (0, 0, 255),
-                (36.0, 36.0, 255),
-                (255.0, 146.0, 146.0),
+                (36, 36, 255),
+                (255, 145, 145),
             ],
         ),
     ],
@@ -50,5 +49,4 @@ def test_color_mapper(scores, expected):
     result = map_to_rgb(scores, config=PlottingConfig())
     assert isinstance(result, list)
     assert isinstance(result[0], tuple)
-    result = np.round(result)
-    assert np.allclose(result, expected)
+    tf.debugging.assert_equal(expected, result)

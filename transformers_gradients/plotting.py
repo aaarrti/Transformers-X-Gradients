@@ -5,7 +5,6 @@ from functools import lru_cache, partial
 from itertools import starmap
 from typing import List, Tuple, Mapping, TYPE_CHECKING
 
-import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 from jinja2 import FileSystemLoader, Environment
@@ -39,7 +38,11 @@ class HeatmapRow(BaseModel):
         return HeatmapRow(label=label, explanation=explanation)
 
 
-def post_process_colors(colors: tf.Tensor) -> List[Tuple[float, float, float]]:
+def post_process_colors(
+    colors: tf.Tensor, rgb_range: float
+) -> List[Tuple[float, float, float]]:
+    if rgb_range == 255:
+        colors = tf.cast(colors, tf.int32)
     colors = colors.numpy().tolist()
     colors = list(map(tuple, colors))
     return colors
@@ -76,7 +79,7 @@ def map_to_rgb(
         * config.rgb_scale
     )
 
-    positive_colors = post_process_colors(positive_colors)
+    positive_colors = post_process_colors(positive_colors, rgb_range)
 
     if tf.reduce_min(scores) > 0:
         return positive_colors
@@ -95,7 +98,7 @@ def map_to_rgb(
         * config.rgb_scale
     )
 
-    negative_colors = post_process_colors(negative_colors)
+    negative_colors = post_process_colors(negative_colors, rgb_range)
 
     colors = []
     for i, s in enumerate(scores):
@@ -143,16 +146,13 @@ def html_heatmap(
 
     """
 
-    if not isinstance(explanations[0], Tuple):
-        raise ValueError(f"Must provide token + scores tuples.")
-
     labels = value_or_default(
         labels, lambda: [f"{i}. sample" for i in range(len(explanations))]
     )
     config = mapping_to_config(config, PlottingConfig)
     config = value_or_default(config, lambda: PlottingConfig())
 
-    scores_only = tf.stack([i[1] for i in explanations])
+    scores_only = tf.stack([i.scores for i in explanations])
 
     if config.color_mapping_strategy == "global":
         color_mapper = partial(
@@ -170,11 +170,9 @@ def html_heatmap(
             return t
         return "" if t in config.special_tokens else t
 
-    def to_token_saliencies(
-        tokens: List[str], scores: np.ndarray
-    ) -> List[TokenSaliency]:
-        tokens = map(mask_token_if_ignored, tokens)
-        colors = color_mapper(scores)
+    def to_token_saliencies(explanation: Explanation) -> List[TokenSaliency]:
+        tokens = map(mask_token_if_ignored, explanation.tokens)
+        colors = color_mapper(explanation.scores)
         return list(
             starmap(
                 TokenSaliency.build,
@@ -183,9 +181,7 @@ def html_heatmap(
         )
 
     explanations_batch = list(
-        starmap(
-            HeatmapRow.build, zip(labels, starmap(to_token_saliencies, explanations))
-        )
+        starmap(HeatmapRow.build, zip(labels, map(to_token_saliencies, explanations)))
     )
     template = load_template()
     heatmap = template.render(explanations_batch=explanations_batch)
