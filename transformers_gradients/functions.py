@@ -95,7 +95,7 @@ def normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
     """Makes the absolute values sum to 1."""
     # float 16 will cause overflow
     scores = tf.cast(scores, tf.float32)
-    scores = scores + tf.keras.backend.epsilon
+    scores = scores + tf.keras.backend.epsilon()
     return tf.transpose(
         tf.transpose(scores, [1, 0]) / tf.reduce_sum(tf.abs(scores), -1), [1, 0]
     )

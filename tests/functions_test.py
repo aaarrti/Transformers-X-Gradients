@@ -1,31 +1,38 @@
 import pytest
-import numpy as np
-from sklearn import linear_model
 import tensorflow as tf
+from safetensors.tensorflow import load_file
 
+from transformers_gradients import normalize_sum_to_1
+from transformers_gradients.assertions import assert_numerics
 from transformers_gradients.functions import ridge_regression
+
+
+@pytest.fixture
+def explanation_tensor():
+    return load_file("tests/data/explanations_tensor.safetensors")["a_batch"]
 
 
 @pytest.fixture(scope="session")
 def ridge_inputs():
-    return (
-        (np.random.default_rng(42).random(size=(6, 29)) >= 0.5),
-        np.random.default_rng(42).random(size=6, dtype=float),
-        np.random.default_rng(42).random(size=6, dtype=float),
-    )
+    return load_file("tests/data/ridge_input.safetensors")
 
 
 @pytest.fixture
 def ridge_expected(ridge_inputs):
-    model = linear_model.Ridge(alpha=1.0, solver="cholesky", random_state=42)
-    model = model.fit(ridge_inputs[0], ridge_inputs[1], sample_weight=ridge_inputs[2])
-    return model.coef_  # noqa
+    return load_file("tests/data/ridge_expected.safetensors")["expected"]
 
 
 def test_ridge_regression(ridge_inputs, ridge_expected):
     result = ridge_regression(
-        ridge_inputs[0], ridge_inputs[1], sample_weight=ridge_inputs[2]
+        ridge_inputs["X"], ridge_inputs["Y"], ridge_inputs["sample_weight"]
     )
     assert result.shape == ridge_expected.shape
-    tf.debugging.check_numerics(result)
+    assert_numerics(result)
     tf.debugging.assert_near(result, ridge_expected, atol=0.01)
+
+
+def test_normalise_scores(explanation_tensor):
+    result = normalize_sum_to_1(explanation_tensor)
+    assert_numerics(result)
+    ex_sum = tf.reduce_sum(result, axis=1)
+    tf.debugging.assert_near(ex_sum, 1.0)

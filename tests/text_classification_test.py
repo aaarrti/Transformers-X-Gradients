@@ -15,6 +15,7 @@ from transformers_gradients import (
 )
 from transformers_gradients.lib_types import ExplainFn
 from transformers_gradients.utils import encode_inputs
+from transformers_gradients.assertions import assert_numerics
 
 BATCH_SIZE = 64
 
@@ -125,7 +126,7 @@ def test_plain_text(func: ExplainFn, sst2_model, sst2_batch, sst2_tokenizer):
         assert isinstance(e.tokens, tuple)
         assert [isinstance(i, str) for i in e.tokens]
         assert isinstance(e.scores, tf.Tensor)
-        tf.debugging.check_numerics(e.scores, "NaNs not allowed")
+        assert_numerics(explanations)
 
 
 @text_classification_tests
@@ -139,7 +140,7 @@ def test_embeddings(func: ExplainFn, sst2_model, sst2_batch_embeddings, sst2_tok
     )
     assert len(explanations) == BATCH_SIZE
     assert isinstance(explanations, tf.Tensor)
-    tf.debugging.check_numerics(explanations, "NaNs not allowed")
+    assert_numerics(explanations)
 
 
 def test_lime(sst2_model, sst2_batch, sst2_tokenizer):
@@ -154,4 +155,4 @@ def test_lime(sst2_model, sst2_batch, sst2_tokenizer):
         assert isinstance(e.tokens, tuple)
         assert [isinstance(i, str) for i in e.tokens]
         assert isinstance(e.scores, tf.Tensor)
-        tf.debugging.check_numerics(explanations, "NaNs not allowed")
+        assert_numerics(explanations)

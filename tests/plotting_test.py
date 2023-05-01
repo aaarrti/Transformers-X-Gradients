@@ -8,7 +8,7 @@ from transformers_gradients.plotting import html_heatmap, map_to_rgb
 
 @pytest.fixture
 def a_batch():
-    with open("tests/data/a_batch.pickle", "rb") as f:
+    with open("tests/data/explanations_batch.pickle", "rb") as f:
         data = pickle.load(f)
 
     return data
