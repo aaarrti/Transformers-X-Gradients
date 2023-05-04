@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import platform
 from types import ModuleType
-from typing import TypeVar, Callable, List, Tuple
+from typing import TypeVar, Callable, List, Tuple, Mapping
 
 import tensorflow as tf
 from transformers import PreTrainedTokenizerBase
 
-from transformers_gradients.types import ExplainFn, ApplyNoiseFn
+from transformers_gradients.lib_types import ExplainFn, ApplyNoiseFn
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -67,17 +67,34 @@ def resolve_baseline_explain_fn(
     return method_mapping[explain_fn]  # type: ignore
 
 
-def resolve_noise_fn(noise_fn: str | ApplyNoiseFn) -> ApplyNoiseFn:
-    if isinstance(noise_fn, Callable):  # type: ignore
-        return noise_fn  # type: ignore
-
-    from transformers_gradients.functions import additive_noise, multiplicative_noise
+def resolve_noise_fn(
+    noise_fn: ApplyNoiseFn | Callable[[tf.Tensor, tf.Tensor], tf.Tensor]
+) -> Callable[[tf.Tensor, tf.Tensor], tf.Tensor]:
+    if isinstance(noise_fn, Callable):
+        return noise_fn
 
     if noise_fn == "multiplicative":
-        return multiplicative_noise
+        return tf.multiply
     if noise_fn == "additive":
-        return additive_noise
+        return tf.add
 
     raise ValueError(
-        f"Unknown noise_fn: {noise_fn}, suported are additive, multiplicative"
+        f"Unknown noise_fn: {noise_fn}, supported are additive, multiplicative"
     )
+
+
+def mapping_to_config(config, cls):
+    if isinstance(config, Mapping):
+        return cls(**config)
+    else:
+        return config
+
+
+def is_mixed_precision_supported_device():
+    gpus = tf.config.list_physical_devices("GPU")
+    if len(gpus) > 0:
+        gpu_details = tf.config.experimental.get_device_details(gpus[0])
+        cc = gpu_details.get("compute_capability")
+        if cc:
+            return cc >= (7, 0)
+    return False

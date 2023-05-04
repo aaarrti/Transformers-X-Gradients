@@ -17,7 +17,7 @@ name = "transformers_gradients"  # Required
 #
 # For a discussion on single-sourcing the version, see
 # https://packaging.python.org/guides/single-sourcing-package-version/
-version = "0.0.12"  # Required
+version = "0.0.29"  # Required
 
 # This is a one-line description or tagline of what your project does. This
 # corresponds to the "Summary" metadata field:
@@ -93,12 +93,12 @@ classifiers = [# Optional
 dependencies = [
     "tensorflow >= 2.10.0; sys_platform != 'darwin'",
     "tensorflow_macos >= 2.10.0; sys_platform == 'darwin'",
-    "tensorflow_probability >= 0.18.0"
+    "tensorflow_probability >= 0.18.0",
+    "transformers",
+    "pydantic",
+    "jinja2"
 ]
 [project.optional-dependencies] # Optional
-transformers = [
-    "transformers >= 4.27.4",
-]
 [project.urls]  # Optional
 "Homepage" = "https://github.com/aaarrti/TransformersXGradients"
 
