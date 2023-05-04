@@ -1,6 +1,9 @@
+import numpy as np
 import tensorflow as tf
-
+from typing import TypeVar
 from transformers_gradients.utils import is_xla_compatible_platform
+
+T = TypeVar("T")
 
 
 @tf.function(
@@ -86,12 +89,24 @@ def ridge_regression(
         return coef[0]
 
 
+def normalize_sum_to_1(scores: T) -> T:
+    if isinstance(scores, (tf.Tensor, np.ndarray)):
+        return _normalize_sum_to_1(scores)
+
+    from transformers_gradients.lib_types import Explanation
+
+    return Explanation(
+        tokens=scores.tokens,
+        scores=_normalize_sum_to_1(tf.expand_dims(scores.scores, 0))[0],
+    )
+
+
 @tf.function(
     reduce_retracing=True,
     jit_compile=is_xla_compatible_platform(),
     experimental_autograph_options=tf.autograph.experimental.Feature.ALL,
 )
-def normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
+def _normalize_sum_to_1(scores: tf.Tensor) -> tf.Tensor:
     """Makes the absolute values sum to 1."""
     og_dtype = scores.dtype
     # float 16 will cause overflow

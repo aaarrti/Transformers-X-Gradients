@@ -19,3 +19,7 @@ Work in Progress!!! (let him cook)
   - TensorRT
   - TF models official
   - keras NLP ?
+- XAI methods
+  - hot flip?
+  - lemon?
+  - ablation flip?

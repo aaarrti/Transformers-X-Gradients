@@ -183,39 +183,59 @@ def integrated_gradients(
     )
 
     interpolated_grads = tf.TensorArray(
-        size=num_steps + 1,
+        size=min(len(x_batch), num_steps + 1),
         dtype=interpolated_embeddings.dtype,
         clear_after_read=True,
     )
 
-    # While at first it may seem a better idea to concatenate all inputs in one new batch,
-    # at practise in real use the batch size already is maximized,
-    # and create new axis based on num steps, will causes shapes not divisible by 8.
-    for i in tf.range(num_steps):
-        interpolation_step = interpolated_embeddings[i]
+    iterate_over_interpolation_samples = len(x_batch) >= num_steps
+
+    if not iterate_over_interpolation_samples:
+        interpolated_embeddings = tf.transpose(interpolated_embeddings, [1, 0, 2, 3])
+
+    iterator = (
+        tf.range(num_steps)
+        if iterate_over_interpolation_samples
+        else tf.range(len(x_batch))
+    )
+
+    for i in iterator:
+        x = interpolated_embeddings[i]
+        if iterate_over_interpolation_samples:
+            am = attention_mask
+        else:
+            am = tf.repeat(
+                tf.expand_dims(attention_mask[i], 0), (num_steps + 1), axis=0
+            )
 
         with tf.GradientTape() as tape:
-            tape.watch(interpolation_step)
+            tape.watch(x)
             logits = model(
                 None,
-                inputs_embeds=interpolation_step,
+                inputs_embeds=x,
                 training=False,
-                attention_mask=attention_mask,
+                attention_mask=am,
             ).logits
-            logits = logits_for_labels(logits, y_batch)
+            if iterate_over_interpolation_samples:
+                logits = logits_for_labels(logits, y_batch)
+            else:
+                logits = logits[:, y_batch[i]]
 
-        grads = tape.gradient(logits, interpolation_step)
+        grads = tape.gradient(logits, x)
+
         interpolated_grads = interpolated_grads.write(i, grads)
 
     interpolated_grads_tensor = interpolated_grads.stack()
     interpolated_grads.mark_used()
     interpolated_grads.close()
 
-    # Compute grad norm for each interpolation step.
-    interpolated_scores = tf.linalg.norm(interpolated_grads_tensor, axis=-1)
+    integration_axis = 0 if iterate_over_interpolation_samples else 1
 
-    scores = tfp.math.trapz(interpolated_scores, axis=0)
-    return scores
+    return tf.math.reduce_sum(
+        tfp.math.trapz(interpolated_grads_tensor, axis=integration_axis)
+        * (x_batch - baseline),
+        axis=-1,
+    )
 
 
 @plain_text_inputs
